@@ -3,6 +3,7 @@ package basher
 import (
 	"fmt"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/superfly/coordBfaas/auth"
@@ -11,6 +12,7 @@ import (
 type Server struct {
 	*http.Server
 	verifier auth.Verifier
+	used     atomic.Bool
 }
 
 func New(port int, machId string, pubKey string) (*Server, error) {
@@ -24,7 +26,7 @@ func New(port int, machId string, pubKey string) (*Server, error) {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /run", server.handleRun)
+	mux.HandleFunc("POST /run", server.withAuth(server.withOnce(server.handleRun)))
 
 	server.Server = &http.Server{
 		// No timeouts set.

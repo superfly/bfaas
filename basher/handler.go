@@ -1,6 +1,7 @@
 package basher
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,13 +13,35 @@ import (
 	"time"
 )
 
-func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
-	auth := r.Header.Get("Authorization")
-	if err := s.verifier(time.Now(), auth); err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
+type Handler func(w http.ResponseWriter, r *http.Request)
 
+func (s *Server) withAuth(next Handler) Handler {
+	return func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		if err := s.verifier(time.Now(), auth); err != nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		next(w, r)
+	}
+}
+
+func (s *Server) withOnce(next Handler) Handler {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.used.Swap(true) {
+			http.Error(w, "conflict", http.StatusConflict)
+			return
+		}
+
+		defer func() {
+			go s.Shutdown(context.Background())
+		}()
+		next(w, r)
+	}
+}
+
+func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	bs, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
