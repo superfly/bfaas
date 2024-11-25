@@ -64,6 +64,8 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	flusher, canFlush := w.(http.Flusher)
+
 	copier := func(event string, r io.ReadCloser) {
 		defer r.Close()
 
@@ -76,8 +78,12 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 
 			s := string(buf[:n])
 			bs, _ := json.Marshal(s)
+
 			mu.Lock()
-			fmt.Fprintf(w, "event %s:\ndata: %s\n\n", event, string(bs))
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, string(bs))
+			if canFlush {
+				flusher.Flush()
+			}
 			mu.Unlock()
 		}
 
@@ -101,5 +107,5 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wg.Wait()
-	fmt.Fprintf(w, "event exit:\ndata: {\"code\":%d}\n\n", exitCode)
+	fmt.Fprintf(w, "event: exit\ndata: {\"code\":%d}\n\n", exitCode)
 }

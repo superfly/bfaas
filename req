@@ -1,4 +1,4 @@
 #!/bin/sh
 
 . ./env.sh
-curl -H "Authorization: $(go run cmd/genauth/main.go $FLY_MACHINE_ID)" http://localhost:3333/run -d "$@"
+curl -s -D- -H "Authorization: $(go run cmd/genauth/main.go $FLY_MACHINE_ID)" http://localhost:3333/run -d "$@"
