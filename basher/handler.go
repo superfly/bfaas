@@ -50,7 +50,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	cmd := exec.Command("/bin/bash", "-c", string(bs))
+	cmd := exec.CommandContext(r.Context(), "/bin/bash", "-c", string(bs))
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

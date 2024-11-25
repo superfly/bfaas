@@ -4,6 +4,7 @@ A coordinator that runs unsafe code in a work machine with strict time limits.
 
 # What's here
 
+- `cmd/coord`: the server that starts basher works and proxies requests to them with a time limit.
 - `cmd/basher`: the server that runs untrusted code.
 - `cmd/genauth`: command line that generates pub/priv key pairs for basher auth.
 - `cmd/genauth`: command line for generating an auth value for basher.
