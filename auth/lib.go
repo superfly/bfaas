@@ -30,8 +30,8 @@ func randomBytes(sz int) []byte {
 	return buf
 }
 
-// genKeypair returns a newly generated public and private key.
-func genKeypair() (string, string, error) {
+// GenKeypair returns a newly generated public and private key.
+func GenKeypair() (string, string, error) {
 	pub, priv, err := sign.GenerateKey(rand.Reader)
 	if err != nil {
 		return "", "", err
@@ -94,16 +94,16 @@ func parseMsg(msg string) (ts time.Time, machId string, err error) {
 	return
 }
 
-type Verifier func(now time.Time, mach string, auth string) error
+type Verifier func(now time.Time, auth string) error
 
-func NewVerifier(hexPubKey string, liveness time.Duration) (Verifier, error) {
+func NewVerifier(hexPubKey string, targMachId string, liveness time.Duration) (Verifier, error) {
 	pubKeyBs, err := parseKey(hexPubKey, signPubKeySize)
 	if err != nil {
 		return nil, fmt.Errorf("Error parsing public key: %w", err)
 	}
 	pubKey := (*[signPubKeySize]byte)(pubKeyBs)
 
-	return func(now time.Time, targMachId string, auth string) error {
+	return func(now time.Time, auth string) error {
 		sig, err := hex.DecodeString(auth)
 		if err != nil {
 			return ErrBadAuth
@@ -111,20 +111,24 @@ func NewVerifier(hexPubKey string, liveness time.Duration) (Verifier, error) {
 
 		msg, ok := sign.Open(nil, sig, pubKey)
 		if !ok {
+			log.Printf("bad signature for %s", auth)
 			return ErrBadAuth
 		}
 
 		ts, machId, err := parseMsg(string(msg))
 		if err != nil {
+			log.Printf("bad message format: %v", err)
 			return ErrBadAuth
 		}
 
 		dt := now.Sub(ts)
 		if !(-timeSlack < dt && dt < liveness) {
+			log.Printf("bad ts %v (dt=%v)", ts, dt)
 			return ErrBadAuth
 		}
 
 		if machId != targMachId {
+			log.Printf("bad machId %v != %v", machId, targMachId)
 			return ErrBadAuth
 		}
 
