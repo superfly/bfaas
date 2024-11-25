@@ -32,6 +32,10 @@ func TestAuth(t *testing.T) {
 	err = verifier(now.Add(4*time.Second), "m1234", auth)
 	assert.NoError(t, err)
 
+	// verify succeeds with small clock skew
+	err = verifier(now.Add(-1*time.Second), "m1234", auth)
+	assert.NoError(t, err)
+
 	// verify fails if you mutate the data
 	bs, _ := hex.DecodeString(auth)
 	altered := strings.ReplaceAll(string(bs), "m1234", "m4321")
@@ -43,6 +47,10 @@ func TestAuth(t *testing.T) {
 
 	// verify fails after liveness expires
 	err = verifier(now.Add(6*time.Second), "m1234", auth)
+	assert.Error(t, err)
+
+	// verify fails with large clock skew.
+	err = verifier(now.Add(-3*time.Second), "m1234", auth)
 	assert.Error(t, err)
 
 	// verify fails if the machine id does not match
