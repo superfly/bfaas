@@ -13,16 +13,6 @@ type Server struct {
 	verifier auth.Verifier
 }
 
-func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
-	auth := r.Header.Get("Authorization")
-	if err := s.verifier(time.Now(), auth); err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	fmt.Fprintf(w, "yay!\n")
-}
-
 func New(port int, machId string, pubKey string) (*Server, error) {
 	verifier, err := auth.NewVerifier(pubKey, machId, 5*time.Second)
 	if err != nil {

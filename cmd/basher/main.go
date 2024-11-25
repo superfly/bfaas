@@ -9,7 +9,13 @@ import (
 )
 
 func main() {
-	srv, err := basher.New(3333, "m3333", os.Getenv("PUBLIC"))
+	pubKey := os.Getenv("PUBLIC")
+	machId := os.Getenv("FLY_MACHINE_ID")
+	if machId == "" || pubKey == "" {
+		log.Fatalf("need PUBLIC and FLY_MACHINE_ID")
+	}
+
+	srv, err := basher.New(3333, machId, pubKey)
 	if err != nil {
 		log.Fatalf("basher.New: %v", err)
 	}
