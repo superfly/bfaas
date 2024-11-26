@@ -3,11 +3,14 @@ package machines
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/alecthomas/assert/v2"
+
+	"github.com/superfly/coordBfaas/japi"
 )
 
 var machConfig = MachineConfig{
@@ -91,12 +94,22 @@ func TestApi(t *testing.T) {
 	assert.True(t, ok)
 
 	// Lease
-	lease, err := api.Lease(ctx, appName, mach.Id, &LeaseReq{Descr: "abc123", Ttl: 500})
+	lease, err := api.GetLease(ctx, appName, mach.Id)
+	assert.Error(t, err)
+	assert.True(t, japi.ErrorIsStatus(err, http.StatusNotFound))
+
+	lease, err = api.Lease(ctx, appName, mach.Id, &LeaseReq{Descr: "abc123", Ttl: 500})
 	assert.NoError(t, err)
 	log.Printf("lease %v: %+v", mach.Id, lease)
 	assert.Equal(t, lease.Status, "success")
 	assert.Equal(t, lease.Data.Descr, "abc123")
 	nonce := lease.Data.Nonce
+
+	lease, err = api.GetLease(ctx, appName, mach.Id)
+	assert.NoError(t, err)
+	log.Printf("get lease %v: %+v", mach.Id, lease)
+	assert.Equal(t, lease.Status, "success")
+	assert.Equal(t, lease.Data.Descr, "abc123")
 
 	// Destroy without lease fails
 	_, err = api.Destroy(ctx, appName, mach.Id, true)
