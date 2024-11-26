@@ -12,8 +12,8 @@ import (
 	"slices"
 )
 
-// JsonReq encodes the parameters needed to perform a single HTTP request.
-type JsonReq struct {
+// Req encodes the parameters needed to perform a single HTTP request.
+type Req struct {
 	client  *http.Client
 	baseUrl string
 
@@ -26,11 +26,11 @@ type JsonReq struct {
 	okCodes  []int
 }
 
-type JsonReqOpt func(*JsonReq)
+type ReqOpt func(*Req)
 
 // Req builds a new request object using default values configured for the JsonApi.
-func (p *JsonApi) Req(method string, opts ...JsonReqOpt) *JsonReq {
-	n := &JsonReq{
+func (p *Api) Req(method string, opts ...ReqOpt) *Req {
+	n := &Req{
 		client:  p.client,
 		baseUrl: p.url,
 
@@ -47,39 +47,39 @@ func (p *JsonApi) Req(method string, opts ...JsonReqOpt) *JsonReq {
 }
 
 // ReqPath sets the URL path for the request.
-func ReqPath(pathFmt string, a ...interface{}) JsonReqOpt {
-	return func(p *JsonReq) { p.path = fmt.Sprintf(pathFmt, a...) }
+func ReqPath(pathFmt string, a ...interface{}) ReqOpt {
+	return func(p *Req) { p.path = fmt.Sprintf(pathFmt, a...) }
 }
 
 // ReqHeader adds a header which will be sent in the request.
-func ReqHeader(k, v string) JsonReqOpt {
-	return func(p *JsonReq) { p.header.Add(k, v) }
+func ReqHeader(k, v string) ReqOpt {
+	return func(p *Req) { p.header.Add(k, v) }
 }
 
 // ReqQuery adds a query key and value which will be encoded in the request URL.
-func ReqQuery(k, v string) JsonReqOpt {
-	return func(p *JsonReq) { p.qs.Set(k, v) }
+func ReqQuery(k, v string) ReqOpt {
+	return func(p *Req) { p.qs.Set(k, v) }
 }
 
 // ReqBody sets the request body to encode and deliver as JSON.
-func ReqBody(x interface{}) JsonReqOpt {
-	return func(p *JsonReq) { p.reqBody = x }
+func ReqBody(x interface{}) ReqOpt {
+	return func(p *Req) { p.reqBody = x }
 }
 
 // ReqRespBody sets the response body to parse JSON response bodies into.
-func ReqRespBody(x interface{}) JsonReqOpt {
-	return func(p *JsonReq) { p.respBody = x }
+func ReqRespBody(x interface{}) ReqOpt {
+	return func(p *Req) { p.respBody = x }
 }
 
 // ReqOkCodes sets the list of http status codes that indicate success.
-func OkCodes(codes ...int) JsonReqOpt {
-	return func(p *JsonReq) { p.okCodes = codes }
+func OkCodes(codes ...int) ReqOpt {
+	return func(p *Req) { p.okCodes = codes }
 }
 
 // Do performs the request, returning any errors.
 // If the request has a response body and there are no errors,
 // the response's body is parsed into it.
-func (p *JsonReq) Do(ctx context.Context) error {
+func (p *Req) Do(ctx context.Context) error {
 	url := p.baseUrl + p.path
 	fullUrl := url
 	if len(p.qs) > 0 {
