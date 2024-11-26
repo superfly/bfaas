@@ -1,4 +1,4 @@
-package machine
+package pool
 
 import (
 	"context"
@@ -6,9 +6,12 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/superfly/coordBfaas/machines"
 )
 
-type PoolMach struct {
+// Mach is a machine in the pool.
+type Mach struct {
 	id          string
 	leaseExpire time.Time
 }
@@ -21,15 +24,15 @@ type Pool struct {
 	reqTime   time.Duration
 	nowFunc   func() time.Time // for mocking
 
-	machines MachinesApi
+	machines *machines.Api
 	appName  string
 
 	mu   sync.Mutex
-	free []*PoolMach
-	used map[string]*PoolMach
+	free []*Mach
+	used map[string]*Mach
 }
 
-func NewPool(owner string, maxSize int, leaseTime time.Duration, reqTime time.Duration, machines MachinesApi, appName string) *Pool {
+func NewPool(owner string, maxSize int, leaseTime time.Duration, reqTime time.Duration, machines *machines.Api, appName string) *Pool {
 	// XXX TODO: bootstrap free pool with p.getLeases(ctx), picking up any machines owned by us.
 	// or at least destroying them.
 	return &Pool{
@@ -39,11 +42,11 @@ func NewPool(owner string, maxSize int, leaseTime time.Duration, reqTime time.Du
 		nowFunc:   time.Now,
 		machines:  machines,
 		appName:   appName,
-		used:      make(map[string]*PoolMach),
+		used:      make(map[string]*Mach),
 	}
 }
 
-func (p *Pool) allocFree() *PoolMach {
+func (p *Pool) allocFree() *Mach {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -57,7 +60,7 @@ func (p *Pool) allocFree() *PoolMach {
 	return m
 }
 
-func (p *Pool) Alloc() (*PoolMach, error) {
+func (p *Pool) Alloc() (*Mach, error) {
 	if m := p.allocFree(); m != nil {
 		return m, nil
 	}
@@ -71,12 +74,12 @@ func (p *Pool) Alloc() (*PoolMach, error) {
 // getExpired removes items from the free list that
 // don't have enough lease time left to perform useful work,
 // and returns a list of those machines.
-func (p *Pool) getExpired() []*PoolMach {
+func (p *Pool) getExpired() []*Mach {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	var free []*PoolMach
-	var expired []*PoolMach
+	var free []*Mach
+	var expired []*Mach
 	for _, m := range p.free {
 		needTime := p.nowFunc().Add(p.reqTime)
 		if m.leaseExpire.Before(needTime) {
