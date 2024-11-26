@@ -6,106 +6,157 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 )
 
-var NoReqBody interface{} = nil
-
+// JsonApi provides an API for buildng and making JSON HTTP requests.
 type JsonApi struct {
+	url    string
 	client *http.Client
-	apiUrl string
-	auth   string
+	header http.Header
 }
 
-type Errorf = func(format string, a ...any) error
-
-func (p *JsonApi) makeUrl(path string) (string, Errorf) {
-	url := fmt.Sprintf("%s%s", p.apiUrl, path)
-	errorf := func(format string, a ...any) error {
-		args := append([]interface{}{url}, a...)
-		return fmt.Errorf("%s: "+format, args...)
+// NewJsonApi returns a new JsonApi object which encodes settings
+// and default values used when constructing requests.
+// The returned object can be further modified with chainable methods.
+func NewJsonApi(url string) *JsonApi {
+	return &JsonApi{
+		url:    url,
+		client: &http.Client{},
+		header: make(http.Header),
 	}
-	return url, errorf
 }
 
-// newRequest makes a request to the API url with a method and body and path.
-func (p *JsonApi) newRequest(ctx context.Context, method, path string, body io.Reader, qs url.Values) (*http.Request, Errorf, error) {
-	url, errorf := p.makeUrl(path)
-	full_url := url
-	if len(qs) > 0 {
-		full_url = url + "?" + qs.Encode()
+// WithClient sets an HTTP client to use when making requests.
+func (p *JsonApi) WithClient(client *http.Client) *JsonApi {
+	p.client = client
+	return p
+}
+
+// AddHeader adds a header that will be included in all requests.
+func (p *JsonApi) AddHeader(k, v string) *JsonApi {
+	p.header.Add(k, v)
+	return p
+}
+
+// AddHeader sets a header that will be included in all requests.
+func (p *JsonApi) SetHeader(k, v string) *JsonApi {
+	p.header.Set(k, v)
+	return p
+}
+
+// JsonReq encodes the parameters needed to perform a single HTTP request.
+type JsonReq struct {
+	url      string
+	client   *http.Client
+	method   string
+	header   http.Header
+	qs       url.Values
+	reqBody  interface{}
+	respBody interface{}
+	okCodes  []int
+}
+
+// Req builds a new request object using default values configured for the JsonApi.
+// The returned value can be updated with chainable modifier methods.
+func (p *JsonApi) Req(method, pathFmt string, a ...interface{}) *JsonReq {
+	return &JsonReq{
+		url:     p.url + fmt.Sprintf(pathFmt, a...),
+		client:  p.client,
+		method:  method,
+		header:  maps.Clone(p.header),
+		qs:      make(url.Values),
+		okCodes: []int{http.StatusOK},
+	}
+}
+
+// AddHeader adds a header which will be sent in the request.
+func (p *JsonReq) AddHeader(k, v string) *JsonReq {
+	p.header.Add(k, v)
+	return p
+}
+
+// SetHeader sets a header which will be sent in the request.
+func (p *JsonReq) SetHeader(k, v string) *JsonReq {
+	p.header.Set(k, v)
+	return p
+}
+
+// AddQuery adds a query key and value which will be encoded in the request URL.
+func (p *JsonReq) AddQuery(k, v string) *JsonReq {
+	p.qs.Set(k, v)
+	return p
+}
+
+// ReqBody sets the request body to encode and deliver as JSON.
+func (p *JsonReq) ReqBody(x interface{}) *JsonReq {
+	p.reqBody = x
+	return p
+}
+
+// RespBody sets the response body to parse JSON response bodies into.
+func (p *JsonReq) RespBody(x interface{}) *JsonReq {
+	p.respBody = x
+	return p
+}
+
+// OkCodes sets the list of http status codes that indicate success.
+func (p *JsonReq) OkCodes(codes ...int) *JsonReq {
+	p.okCodes = codes
+	return p
+}
+
+// Do performs the request, returning any errors.
+// If the request has a response body and there are no errors,
+// the response's body is parsed into it.
+func (p *JsonReq) Do(ctx context.Context) error {
+	url := p.url
+	if len(p.qs) > 0 {
+		url = url + "?" + p.qs.Encode()
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, full_url, body)
+	var body io.Reader
+	if p.reqBody != nil {
+		buf := bytes.NewBuffer(nil)
+		if err := json.NewEncoder(buf).Encode(p.reqBody); err != nil {
+			return fmt.Errorf("%s: encode request: %w", p.url, err)
+		}
+		body = buf
+	}
+
+	req, err := http.NewRequestWithContext(ctx, p.method, url, body)
 	if err != nil {
-		return nil, errorf, errorf("NewRequestWithContext: %w", err)
+		return fmt.Errorf("%s: NewRequestWithContext: %w", p.url, err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+p.auth)
+	req.Header = p.header
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	return req, errorf, nil
-}
 
-// do performs a request using the configured client and parses the response body into respData.
-func (p *JsonApi) do(req *http.Request, errorf Errorf, respData interface{}) error {
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return errorf("client.Do: %w", err)
+		return fmt.Errorf("%s: client.Do: %w", p.url, err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	ok := slices.Contains(p.okCodes, resp.StatusCode)
+	if !ok {
 		bs, _ := io.ReadAll(resp.Body)
 		var body string
 		if bs != nil {
 			body = string(bs)
 		}
-		return errorf("client.Do: status %d (%q)", resp.StatusCode, body)
+		return fmt.Errorf("%s: client.Do: status %d (%q)", p.url, resp.StatusCode, body)
 	}
 
-	if err := json.NewDecoder(req.Body).Decode(respData); err != nil {
-		return errorf("parse response: %w", err)
-	}
-	return nil
-}
-
-// get performs a GET request to path and parses the response body into resp.
-func (p *JsonApi) Get(ctx context.Context, path string, qs url.Values, resp interface{}) error {
-	req, errorf, err := p.newRequest(ctx, "GET", path, http.NoBody, qs)
-	if err != nil {
-		return err
-	}
-
-	return p.do(req, errorf, resp)
-}
-
-// del performs a DELETE request to path and parses the response body into resp.
-func (p *JsonApi) Delete(ctx context.Context, path string, qs url.Values, resp interface{}) error {
-	req, errorf, err := p.newRequest(ctx, "DELETE", path, http.NoBody, qs)
-	if err != nil {
-		return err
-	}
-
-	return p.do(req, errorf, resp)
-}
-
-// post performs a POST request to path using the json encoded reqBody and
-// parses the response body into resp.
-func (p *JsonApi) Post(ctx context.Context, path string, reqBody, resp interface{}) error {
-	buf := bytes.NewBuffer(nil)
-	if reqBody != nil {
-		if err := json.NewEncoder(buf).Encode(reqBody); err != nil {
-			_, errorf := p.makeUrl(path)
-			return errorf("encode request: %w", err)
+	if p.respBody != nil {
+		if err := json.NewDecoder(resp.Body).Decode(p.respBody); err != nil {
+			return fmt.Errorf("%s: parse response: %w", p.url, err)
 		}
 	}
 
-	req, errorf, err := p.newRequest(ctx, "POST", path, buf, nil)
-	if err != nil {
-		return err
-	}
-
-	return p.do(req, errorf, resp)
+	return nil
 }

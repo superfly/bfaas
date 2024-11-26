@@ -3,13 +3,12 @@ package machine
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"time"
 )
 
 // MachinesApi provides a subset of the fly machines API.
 type MachinesApi struct {
-	JsonApi
+	json *JsonApi
 }
 
 type CreateMachineReq struct {
@@ -53,7 +52,8 @@ type MachineResp struct {
 
 func (p *MachinesApi) Create(ctx context.Context, appName string, req *CreateMachineReq) (*MachineResp, error) {
 	var resp MachineResp
-	if err := p.Post(ctx, fmt.Sprintf("/v1/apps/%s/machines", appName), req, &resp); err != nil {
+	r := p.json.Req("POST", "/v1/apps/%s/machines", appName).ReqBody(req).RespBody(&resp)
+	if err := r.Do(ctx); err != nil {
 		return nil, err
 	}
 
@@ -68,8 +68,9 @@ type StartMachineResp struct {
 
 func (p *MachinesApi) Start(ctx context.Context, appName, machId string) (*StartMachineResp, error) {
 	var resp StartMachineResp
-	path := fmt.Sprintf("/v1/apps/%s/machines/%s/start", appName, machId)
-	if err := p.Post(ctx, path, NoReqBody, &resp); err != nil {
+	r := p.json.Req("POST", "/v1/apps/%s/machines/%s/start", appName, machId).
+		RespBody(&resp)
+	if err := r.Do(ctx); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -80,26 +81,24 @@ type OkResp struct {
 }
 
 func (p *MachinesApi) WaitFor(ctx context.Context, appName, machId, instanceId string, timeout time.Duration, state string) (bool, error) {
-	qs := make(url.Values)
-	qs.Set("instance_id", instanceId)
-	qs.Set("timeout", fmt.Sprintf("%d", int(timeout.Seconds())))
-	qs.Set("state", state)
-
 	var resp OkResp
-	path := fmt.Sprintf("/v1/apps/%s/machines/%s/wait", appName, machId)
-	if err := p.Get(ctx, path, qs, &resp); err != nil {
+	r := p.json.Req("GET", "/v1/apps/%s/machines/%s/wait", appName, machId).
+		RespBody(&resp).
+		AddQuery("instance_id", instanceId).
+		AddQuery("timeout", fmt.Sprintf("%d", int(timeout.Seconds()))).
+		AddQuery("state", state)
+	if err := r.Do(ctx); err != nil {
 		return false, err
 	}
 	return resp.Ok, nil
 }
 
 func (p *MachinesApi) Destroy(ctx context.Context, appName, machId string, force bool) (bool, error) {
-	qs := make(url.Values)
-	qs.Set("force", fmt.Sprintf("%v", force))
-
 	var resp OkResp
-	path := fmt.Sprintf("/v1/apps/%s/machines/%s", appName, machId)
-	if err := p.Delete(ctx, path, qs, &resp); err != nil {
+	r := p.json.Req("DELETE", "/v1/apps/%s/machines/%s", appName, machId).
+		RespBody(&resp).
+		AddQuery("force", fmt.Sprintf("%v", force))
+	if err := r.Do(ctx); err != nil {
 		return false, err
 	}
 	return resp.Ok, nil
@@ -127,8 +126,10 @@ type LeaseData struct {
 
 func (p *MachinesApi) Lease(ctx context.Context, appName, machId string, req *LeaseReq) (*LeaseResp, error) {
 	var resp LeaseResp
-	path := fmt.Sprintf("/v1/apps/%s/machines/%s/lease", appName, machId)
-	if err := p.Post(ctx, path, req, &resp); err != nil {
+	r := p.json.Req("POST", "/v1/apps/%s/machines/%s/lease", appName, machId).
+		ReqBody(req).
+		RespBody(&resp)
+	if err := r.Do(ctx); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -136,8 +137,8 @@ func (p *MachinesApi) Lease(ctx context.Context, appName, machId string, req *Le
 
 func (p *MachinesApi) GetLease(ctx context.Context, appName, machId string) (*LeaseResp, error) {
 	var resp LeaseResp
-	path := fmt.Sprintf("/v1/apps/%s/machines/%s/lease", appName, machId)
-	if err := p.Get(ctx, path, nil, &resp); err != nil {
+	r := p.json.Req("GET", "/v1/apps/%s/machines/%s/lease", appName, machId).RespBody(&resp)
+	if err := r.Do(ctx); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -146,8 +147,8 @@ func (p *MachinesApi) GetLease(ctx context.Context, appName, machId string) (*Le
 func (p *MachinesApi) List(ctx context.Context, appName string) ([]MachineResp, error) {
 	// TODO: do we want to support include_deleted, region, metadata.key query params?
 	var resp []MachineResp
-	path := fmt.Sprintf("/v1/apps/%s/machines", appName)
-	if err := p.Get(ctx, path, nil, &resp); err != nil {
+	r := p.json.Req("GET", "/v1/apps/%s/machines", appName).RespBody(&resp)
+	if err := r.Do(ctx); err != nil {
 		return nil, err
 	}
 	return resp, nil
