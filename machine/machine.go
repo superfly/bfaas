@@ -40,7 +40,7 @@ func New(auth, appName, image string, exec []string, opts ...Opt) Api {
 		opt(&o)
 	}
 
-	jsonApi := NewJsonApi(o.url).WithClient(o.client).SetHeader("Authorization", auth)
+	jsonApi := NewJsonApi(o.url, ApiClient(o.client), ApiHeader("Authorization", auth))
 	return &MachineApi{
 		appName:  appName,
 		image:    image,

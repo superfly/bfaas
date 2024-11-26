@@ -52,7 +52,7 @@ type MachineResp struct {
 
 func (p *MachinesApi) Create(ctx context.Context, appName string, req *CreateMachineReq) (*MachineResp, error) {
 	var resp MachineResp
-	r := p.json.Req("POST", "/v1/apps/%s/machines", appName).ReqBody(req).RespBody(&resp)
+	r := p.json.Req("POST", ReqPath("/v1/apps/%s/machines", appName), ReqBody(req), ReqRespBody(&resp))
 	if err := r.Do(ctx); err != nil {
 		return nil, err
 	}
@@ -68,8 +68,7 @@ type StartMachineResp struct {
 
 func (p *MachinesApi) Start(ctx context.Context, appName, machId string) (*StartMachineResp, error) {
 	var resp StartMachineResp
-	r := p.json.Req("POST", "/v1/apps/%s/machines/%s/start", appName, machId).
-		RespBody(&resp)
+	r := p.json.Req("POST", ReqPath("/v1/apps/%s/machines/%s/start", appName, machId), ReqRespBody(&resp))
 	if err := r.Do(ctx); err != nil {
 		return nil, err
 	}
@@ -82,11 +81,11 @@ type OkResp struct {
 
 func (p *MachinesApi) WaitFor(ctx context.Context, appName, machId, instanceId string, timeout time.Duration, state string) (bool, error) {
 	var resp OkResp
-	r := p.json.Req("GET", "/v1/apps/%s/machines/%s/wait", appName, machId).
-		RespBody(&resp).
-		AddQuery("instance_id", instanceId).
-		AddQuery("timeout", fmt.Sprintf("%d", int(timeout.Seconds()))).
-		AddQuery("state", state)
+	r := p.json.Req("GET", ReqPath("/v1/apps/%s/machines/%s/wait", appName, machId),
+		ReqRespBody(&resp),
+		ReqQuery("instance_id", instanceId),
+		ReqQuery("timeout", fmt.Sprintf("%d", int(timeout.Seconds()))),
+		ReqQuery("state", state))
 	if err := r.Do(ctx); err != nil {
 		return false, err
 	}
@@ -95,9 +94,9 @@ func (p *MachinesApi) WaitFor(ctx context.Context, appName, machId, instanceId s
 
 func (p *MachinesApi) Destroy(ctx context.Context, appName, machId string, force bool) (bool, error) {
 	var resp OkResp
-	r := p.json.Req("DELETE", "/v1/apps/%s/machines/%s", appName, machId).
-		RespBody(&resp).
-		AddQuery("force", fmt.Sprintf("%v", force))
+	r := p.json.Req("DELETE", ReqPath("/v1/apps/%s/machines/%s", appName, machId),
+		ReqRespBody(&resp),
+		ReqQuery("force", fmt.Sprintf("%v", force)))
 	if err := r.Do(ctx); err != nil {
 		return false, err
 	}
@@ -126,9 +125,9 @@ type LeaseData struct {
 
 func (p *MachinesApi) Lease(ctx context.Context, appName, machId string, req *LeaseReq) (*LeaseResp, error) {
 	var resp LeaseResp
-	r := p.json.Req("POST", "/v1/apps/%s/machines/%s/lease", appName, machId).
-		ReqBody(req).
-		RespBody(&resp)
+	r := p.json.Req("POST", ReqPath("/v1/apps/%s/machines/%s/lease", appName, machId),
+		ReqBody(req),
+		ReqRespBody(&resp))
 	if err := r.Do(ctx); err != nil {
 		return nil, err
 	}
@@ -137,7 +136,7 @@ func (p *MachinesApi) Lease(ctx context.Context, appName, machId string, req *Le
 
 func (p *MachinesApi) GetLease(ctx context.Context, appName, machId string) (*LeaseResp, error) {
 	var resp LeaseResp
-	r := p.json.Req("GET", "/v1/apps/%s/machines/%s/lease", appName, machId).RespBody(&resp)
+	r := p.json.Req("GET", ReqPath("/v1/apps/%s/machines/%s/lease", appName, machId), ReqRespBody(&resp))
 	if err := r.Do(ctx); err != nil {
 		return nil, err
 	}
@@ -147,7 +146,7 @@ func (p *MachinesApi) GetLease(ctx context.Context, appName, machId string) (*Le
 func (p *MachinesApi) List(ctx context.Context, appName string) ([]MachineResp, error) {
 	// TODO: do we want to support include_deleted, region, metadata.key query params?
 	var resp []MachineResp
-	r := p.json.Req("GET", "/v1/apps/%s/machines", appName).RespBody(&resp)
+	r := p.json.Req("GET", ReqPath("/v1/apps/%s/machines", appName), ReqRespBody(&resp))
 	if err := r.Do(ctx); err != nil {
 		return nil, err
 	}

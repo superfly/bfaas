@@ -19,40 +19,40 @@ type JsonApi struct {
 	header http.Header
 }
 
+type JsonApiOpt func(*JsonApi)
+
 // NewJsonApi returns a new JsonApi object which encodes settings
 // and default values used when constructing requests.
-// The returned object can be further modified with chainable methods.
-func NewJsonApi(url string) *JsonApi {
-	return &JsonApi{
+func NewJsonApi(url string, opts ...JsonApiOpt) *JsonApi {
+	n := &JsonApi{
 		url:    url,
 		client: &http.Client{},
 		header: make(http.Header),
 	}
+
+	for _, opt := range opts {
+		opt(n)
+	}
+	return n
 }
 
-// WithClient sets an HTTP client to use when making requests.
-func (p *JsonApi) WithClient(client *http.Client) *JsonApi {
-	p.client = client
-	return p
+// ApiClient sets an HTTP client to use when making requests.
+func ApiClient(client *http.Client) JsonApiOpt {
+	return func(p *JsonApi) { p.client = client }
 }
 
-// AddHeader adds a header that will be included in all requests.
-func (p *JsonApi) AddHeader(k, v string) *JsonApi {
-	p.header.Add(k, v)
-	return p
-}
-
-// AddHeader sets a header that will be included in all requests.
-func (p *JsonApi) SetHeader(k, v string) *JsonApi {
-	p.header.Set(k, v)
-	return p
+// ApiHeader adds a header that will be included in all requests.
+func ApiHeader(k, v string) JsonApiOpt {
+	return func(p *JsonApi) { p.header.Add(k, v) }
 }
 
 // JsonReq encodes the parameters needed to perform a single HTTP request.
 type JsonReq struct {
-	url      string
-	client   *http.Client
+	client  *http.Client
+	baseUrl string
+
 	method   string
+	path     string
 	header   http.Header
 	qs       url.Values
 	reqBody  interface{}
@@ -60,76 +60,78 @@ type JsonReq struct {
 	okCodes  []int
 }
 
+type JsonReqOpt func(*JsonReq)
+
 // Req builds a new request object using default values configured for the JsonApi.
-// The returned value can be updated with chainable modifier methods.
-func (p *JsonApi) Req(method, pathFmt string, a ...interface{}) *JsonReq {
-	return &JsonReq{
-		url:     p.url + fmt.Sprintf(pathFmt, a...),
+func (p *JsonApi) Req(method string, opts ...JsonReqOpt) *JsonReq {
+	n := &JsonReq{
 		client:  p.client,
+		baseUrl: p.url,
+
 		method:  method,
 		header:  maps.Clone(p.header),
 		qs:      make(url.Values),
 		okCodes: []int{http.StatusOK},
 	}
+
+	for _, opt := range opts {
+		opt(n)
+	}
+	return n
 }
 
-// AddHeader adds a header which will be sent in the request.
-func (p *JsonReq) AddHeader(k, v string) *JsonReq {
-	p.header.Add(k, v)
-	return p
+// ReqPath sets the URL path for the request.
+func ReqPath(pathFmt string, a ...interface{}) JsonReqOpt {
+	return func(p *JsonReq) { p.path = fmt.Sprintf(pathFmt, a...) }
 }
 
-// SetHeader sets a header which will be sent in the request.
-func (p *JsonReq) SetHeader(k, v string) *JsonReq {
-	p.header.Set(k, v)
-	return p
+// ReqHeader adds a header which will be sent in the request.
+func ReqHeader(k, v string) JsonReqOpt {
+	return func(p *JsonReq) { p.header.Add(k, v) }
 }
 
-// AddQuery adds a query key and value which will be encoded in the request URL.
-func (p *JsonReq) AddQuery(k, v string) *JsonReq {
-	p.qs.Set(k, v)
-	return p
+// ReqQuery adds a query key and value which will be encoded in the request URL.
+func ReqQuery(k, v string) JsonReqOpt {
+	return func(p *JsonReq) { p.qs.Set(k, v) }
 }
 
 // ReqBody sets the request body to encode and deliver as JSON.
-func (p *JsonReq) ReqBody(x interface{}) *JsonReq {
-	p.reqBody = x
-	return p
+func ReqBody(x interface{}) JsonReqOpt {
+	return func(p *JsonReq) { p.reqBody = x }
 }
 
-// RespBody sets the response body to parse JSON response bodies into.
-func (p *JsonReq) RespBody(x interface{}) *JsonReq {
-	p.respBody = x
-	return p
+// ReqRespBody sets the response body to parse JSON response bodies into.
+func ReqRespBody(x interface{}) JsonReqOpt {
+	return func(p *JsonReq) { p.respBody = x }
 }
 
-// OkCodes sets the list of http status codes that indicate success.
-func (p *JsonReq) OkCodes(codes ...int) *JsonReq {
-	p.okCodes = codes
-	return p
+// ReqOkCodes sets the list of http status codes that indicate success.
+func OkCodes(codes ...int) JsonReqOpt {
+	return func(p *JsonReq) { p.okCodes = codes }
 }
 
 // Do performs the request, returning any errors.
 // If the request has a response body and there are no errors,
 // the response's body is parsed into it.
 func (p *JsonReq) Do(ctx context.Context) error {
-	url := p.url
+	url := p.baseUrl + p.path
+	fullUrl := url
 	if len(p.qs) > 0 {
-		url = url + "?" + p.qs.Encode()
+		fullUrl = fullUrl + "?" + p.qs.Encode()
 	}
 
 	var body io.Reader
 	if p.reqBody != nil {
 		buf := bytes.NewBuffer(nil)
 		if err := json.NewEncoder(buf).Encode(p.reqBody); err != nil {
-			return fmt.Errorf("%s: encode request: %w", p.url, err)
+			return fmt.Errorf("%s: encode request: %w", url, err)
 		}
 		body = buf
 	}
 
-	req, err := http.NewRequestWithContext(ctx, p.method, url, body)
+	req, err := http.NewRequestWithContext(ctx, p.method, fullUrl, body)
 	if err != nil {
-		return fmt.Errorf("%s: NewRequestWithContext: %w", p.url, err)
+		return fmt.Errorf("%s: NewRequestWithContext: %w", url, err)
 	}
 
 	req.Header = p.header
@@ -139,7 +141,7 @@ func (p *JsonReq) Do(ctx context.Context) error {
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("%s: client.Do: %w", p.url, err)
+		return fmt.Errorf("%s: client.Do: %w", url, err)
 	}
 
 	ok := slices.Contains(p.okCodes, resp.StatusCode)
@@ -149,12 +151,12 @@ func (p *JsonReq) Do(ctx context.Context) error {
 		if bs != nil {
 			body = string(bs)
 		}
-		return fmt.Errorf("%s: client.Do: status %d (%q)", p.url, resp.StatusCode, body)
+		return fmt.Errorf("%s: client.Do: status %d (%q)", url, resp.StatusCode, body)
 	}
 
 	if p.respBody != nil {
 		if err := json.NewDecoder(resp.Body).Decode(p.respBody); err != nil {
-			return fmt.Errorf("%s: parse response: %w", p.url, err)
+			return fmt.Errorf("%s: parse response: %w", url, err)
 		}
 	}
 
