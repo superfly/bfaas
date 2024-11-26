@@ -38,7 +38,7 @@ type Guest struct {
 	MemoryMb int    `json:"memory_mb"`
 }
 
-type CreateMachineResp struct {
+type MachineResp struct {
 	Id     string `json:"id"`
 	Name   string `json:"name"`
 	State  string `json:"state"`
@@ -51,8 +51,8 @@ type CreateMachineResp struct {
 	// Events
 }
 
-func (p *MachinesApi) Create(ctx context.Context, appName string, req *CreateMachineReq) (*CreateMachineResp, error) {
-	var resp CreateMachineResp
+func (p *MachinesApi) Create(ctx context.Context, appName string, req *CreateMachineReq) (*MachineResp, error) {
+	var resp MachineResp
 	if err := p.Post(ctx, fmt.Sprintf("/v1/apps/%s/machines", appName), req, &resp); err != nil {
 		return nil, err
 	}
@@ -68,7 +68,8 @@ type StartMachineResp struct {
 
 func (p *MachinesApi) Start(ctx context.Context, appName, machId string) (*StartMachineResp, error) {
 	var resp StartMachineResp
-	if err := p.Post(ctx, fmt.Sprintf("/v1/apps/%s/machines/%s/start", appName, machId), NoReqBody, &resp); err != nil {
+	path := fmt.Sprintf("/v1/apps/%s/machines/%s/start", appName, machId)
+	if err := p.Post(ctx, path, NoReqBody, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -85,7 +86,8 @@ func (p *MachinesApi) WaitFor(ctx context.Context, appName, machId, instanceId s
 	qs.Set("state", state)
 
 	var resp OkResp
-	if err := p.Get(ctx, fmt.Sprintf("/v1/apps/%s/machines/%s/wait", appName, machId), qs, &resp); err != nil {
+	path := fmt.Sprintf("/v1/apps/%s/machines/%s/wait", appName, machId)
+	if err := p.Get(ctx, path, qs, &resp); err != nil {
 		return false, err
 	}
 	return resp.Ok, nil
@@ -96,8 +98,57 @@ func (p *MachinesApi) Destroy(ctx context.Context, appName, machId string, force
 	qs.Set("force", fmt.Sprintf("%v", force))
 
 	var resp OkResp
-	if err := p.Delete(ctx, fmt.Sprintf("/v1/apps/%s/machines/%s", appName, machId), qs, &resp); err != nil {
+	path := fmt.Sprintf("/v1/apps/%s/machines/%s", appName, machId)
+	if err := p.Delete(ctx, path, qs, &resp); err != nil {
 		return false, err
 	}
 	return resp.Ok, nil
+}
+
+type LeaseReq struct {
+	Descr string `json:"description"`
+	Ttl   int    `json:"ttl"`
+}
+
+type LeaseResp struct {
+	Status string    `json:"status"`
+	Data   LeaseData `json:"data"`
+}
+
+type LeaseData struct {
+	Nonce     string `json:"nonce"`
+	ExpiresAt int    `json:"expires_at"`
+	Owner     string `json:"owner"`
+	Descr     string `json:"description"`
+	Version   string `json:"version"`
+}
+
+// XXX TODO: need a way to pass lease nonce in headers in other requests... ugh. api getting complex.
+
+func (p *MachinesApi) Lease(ctx context.Context, appName, machId string, req *LeaseReq) (*LeaseResp, error) {
+	var resp LeaseResp
+	path := fmt.Sprintf("/v1/apps/%s/machines/%s/lease", appName, machId)
+	if err := p.Post(ctx, path, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (p *MachinesApi) GetLease(ctx context.Context, appName, machId string) (*LeaseResp, error) {
+	var resp LeaseResp
+	path := fmt.Sprintf("/v1/apps/%s/machines/%s/lease", appName, machId)
+	if err := p.Get(ctx, path, nil, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (p *MachinesApi) List(ctx context.Context, appName string) ([]MachineResp, error) {
+	// TODO: do we want to support include_deleted, region, metadata.key query params?
+	var resp []MachineResp
+	path := fmt.Sprintf("/v1/apps/%s/machines", appName)
+	if err := p.Get(ctx, path, nil, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
 }
