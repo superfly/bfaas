@@ -24,6 +24,12 @@ func (p *HttpError) Error() string {
 	return fmt.Sprintf("%s: client.Do: status %d (%q)", p.url, p.StatusCode, p.Body)
 }
 
+// ErrorIsStatus returns true if err indicates an HTTP response with statusCode.
+func ErrorIsStatus(err error, statusCode int) bool {
+	httpErr, ok := err.(*HttpError)
+	return ok && httpErr.StatusCode == statusCode
+}
+
 // Req encodes the parameters needed to perform a single HTTP request.
 type Req struct {
 	client  *http.Client
