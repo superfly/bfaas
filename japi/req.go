@@ -1,4 +1,4 @@
-package machine
+package japi
 
 import (
 	"bytes"
@@ -11,40 +11,6 @@ import (
 	"net/url"
 	"slices"
 )
-
-// JsonApi provides an API for buildng and making JSON HTTP requests.
-type JsonApi struct {
-	url    string
-	client *http.Client
-	header http.Header
-}
-
-type JsonApiOpt func(*JsonApi)
-
-// NewJsonApi returns a new JsonApi object which encodes settings
-// and default values used when constructing requests.
-func NewJsonApi(url string, opts ...JsonApiOpt) *JsonApi {
-	n := &JsonApi{
-		url:    url,
-		client: &http.Client{},
-		header: make(http.Header),
-	}
-
-	for _, opt := range opts {
-		opt(n)
-	}
-	return n
-}
-
-// ApiClient sets an HTTP client to use when making requests.
-func ApiClient(client *http.Client) JsonApiOpt {
-	return func(p *JsonApi) { p.client = client }
-}
-
-// ApiHeader adds a header that will be included in all requests.
-func ApiHeader(k, v string) JsonApiOpt {
-	return func(p *JsonApi) { p.header.Add(k, v) }
-}
 
 // JsonReq encodes the parameters needed to perform a single HTTP request.
 type JsonReq struct {

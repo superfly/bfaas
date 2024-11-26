@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/superfly/coordBfaas/japi"
 )
 
 // MachinesApi provides a subset of the fly machines API.
 type MachinesApi struct {
-	json *JsonApi
+	json *japi.JsonApi
 }
 
 type CreateMachineReq struct {
@@ -52,7 +54,7 @@ type MachineResp struct {
 
 func (p *MachinesApi) Create(ctx context.Context, appName string, req *CreateMachineReq) (*MachineResp, error) {
 	var resp MachineResp
-	r := p.json.Req("POST", ReqPath("/v1/apps/%s/machines", appName), ReqBody(req), ReqRespBody(&resp))
+	r := p.json.Req("POST", japi.ReqPath("/v1/apps/%s/machines", appName), japi.ReqBody(req), japi.ReqRespBody(&resp))
 	if err := r.Do(ctx); err != nil {
 		return nil, err
 	}
@@ -68,7 +70,7 @@ type StartMachineResp struct {
 
 func (p *MachinesApi) Start(ctx context.Context, appName, machId string) (*StartMachineResp, error) {
 	var resp StartMachineResp
-	r := p.json.Req("POST", ReqPath("/v1/apps/%s/machines/%s/start", appName, machId), ReqRespBody(&resp))
+	r := p.json.Req("POST", japi.ReqPath("/v1/apps/%s/machines/%s/start", appName, machId), japi.ReqRespBody(&resp))
 	if err := r.Do(ctx); err != nil {
 		return nil, err
 	}
@@ -81,11 +83,11 @@ type OkResp struct {
 
 func (p *MachinesApi) WaitFor(ctx context.Context, appName, machId, instanceId string, timeout time.Duration, state string) (bool, error) {
 	var resp OkResp
-	r := p.json.Req("GET", ReqPath("/v1/apps/%s/machines/%s/wait", appName, machId),
-		ReqRespBody(&resp),
-		ReqQuery("instance_id", instanceId),
-		ReqQuery("timeout", fmt.Sprintf("%d", int(timeout.Seconds()))),
-		ReqQuery("state", state))
+	r := p.json.Req("GET", japi.ReqPath("/v1/apps/%s/machines/%s/wait", appName, machId),
+		japi.ReqRespBody(&resp),
+		japi.ReqQuery("instance_id", instanceId),
+		japi.ReqQuery("timeout", fmt.Sprintf("%d", int(timeout.Seconds()))),
+		japi.ReqQuery("state", state))
 	if err := r.Do(ctx); err != nil {
 		return false, err
 	}
@@ -94,9 +96,9 @@ func (p *MachinesApi) WaitFor(ctx context.Context, appName, machId, instanceId s
 
 func (p *MachinesApi) Destroy(ctx context.Context, appName, machId string, force bool) (bool, error) {
 	var resp OkResp
-	r := p.json.Req("DELETE", ReqPath("/v1/apps/%s/machines/%s", appName, machId),
-		ReqRespBody(&resp),
-		ReqQuery("force", fmt.Sprintf("%v", force)))
+	r := p.json.Req("DELETE", japi.ReqPath("/v1/apps/%s/machines/%s", appName, machId),
+		japi.ReqRespBody(&resp),
+		japi.ReqQuery("force", fmt.Sprintf("%v", force)))
 	if err := r.Do(ctx); err != nil {
 		return false, err
 	}
@@ -125,9 +127,9 @@ type LeaseData struct {
 
 func (p *MachinesApi) Lease(ctx context.Context, appName, machId string, req *LeaseReq) (*LeaseResp, error) {
 	var resp LeaseResp
-	r := p.json.Req("POST", ReqPath("/v1/apps/%s/machines/%s/lease", appName, machId),
-		ReqBody(req),
-		ReqRespBody(&resp))
+	r := p.json.Req("POST", japi.ReqPath("/v1/apps/%s/machines/%s/lease", appName, machId),
+		japi.ReqBody(req),
+		japi.ReqRespBody(&resp))
 	if err := r.Do(ctx); err != nil {
 		return nil, err
 	}
@@ -136,7 +138,7 @@ func (p *MachinesApi) Lease(ctx context.Context, appName, machId string, req *Le
 
 func (p *MachinesApi) GetLease(ctx context.Context, appName, machId string) (*LeaseResp, error) {
 	var resp LeaseResp
-	r := p.json.Req("GET", ReqPath("/v1/apps/%s/machines/%s/lease", appName, machId), ReqRespBody(&resp))
+	r := p.json.Req("GET", japi.ReqPath("/v1/apps/%s/machines/%s/lease", appName, machId), japi.ReqRespBody(&resp))
 	if err := r.Do(ctx); err != nil {
 		return nil, err
 	}
@@ -146,7 +148,7 @@ func (p *MachinesApi) GetLease(ctx context.Context, appName, machId string) (*Le
 func (p *MachinesApi) List(ctx context.Context, appName string) ([]MachineResp, error) {
 	// TODO: do we want to support include_deleted, region, metadata.key query params?
 	var resp []MachineResp
-	r := p.json.Req("GET", ReqPath("/v1/apps/%s/machines", appName), ReqRespBody(&resp))
+	r := p.json.Req("GET", japi.ReqPath("/v1/apps/%s/machines", appName), japi.ReqRespBody(&resp))
 	if err := r.Do(ctx); err != nil {
 		return nil, err
 	}

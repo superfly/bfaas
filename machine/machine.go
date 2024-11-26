@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+
+	"github.com/superfly/coordBfaas/japi"
 )
 
 type opts struct {
@@ -40,7 +42,7 @@ func New(auth, appName, image string, exec []string, opts ...Opt) Api {
 		opt(&o)
 	}
 
-	jsonApi := NewJsonApi(o.url, ApiClient(o.client), ApiHeader("Authorization", auth))
+	jsonApi := japi.New(o.url, japi.Client(o.client), japi.Header("Authorization", auth))
 	return &MachineApi{
 		appName:  appName,
 		image:    image,
