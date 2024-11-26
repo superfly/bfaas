@@ -12,6 +12,18 @@ import (
 	"slices"
 )
 
+// HttpError is an error indicating a status code that does not indicate success.
+// It captures the StatusCode and body of the response.
+type HttpError struct {
+	url        string
+	StatusCode int
+	Body       string
+}
+
+func (p *HttpError) Error() string {
+	return fmt.Sprintf("%s: client.Do: status %d (%q)", p.url, p.StatusCode, p.Body)
+}
+
 // Req encodes the parameters needed to perform a single HTTP request.
 type Req struct {
 	client  *http.Client
@@ -121,7 +133,7 @@ func (p *Req) Do(ctx context.Context) error {
 		if bs != nil {
 			body = string(bs)
 		}
-		return fmt.Errorf("%s: client.Do: status %d (%q)", url, resp.StatusCode, body)
+		return &HttpError{url, resp.StatusCode, body}
 	}
 
 	if p.respBody != nil {
