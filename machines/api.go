@@ -4,23 +4,31 @@ import (
 	"github.com/superfly/coordBfaas/japi"
 )
 
+type ApiOpt = japi.ApiOpt
+type ReqOpt = japi.ReqOpt
+
 // MachinesApi provides a subset of the fly machines API.
 type Api struct {
-	json *japi.JsonApi
+	json *japi.Api
 }
 
 // New returns a machines API for a specified url.
-func New(url string, opts ...japi.JsonApiOpt) *Api {
+func New(token, url string, opts ...ApiOpt) *Api {
 	j := japi.New(url, opts...)
+	japi.Header("Authorization", token)(j)
 	return &Api{j}
 }
 
 // NewPublic returns a machines API using the public url.
-func NewPublic(opts ...japi.JsonApiOpt) *Api {
-	return New("https://api.machines.dev", opts...)
+func NewPublic(token string, opts ...ApiOpt) *Api {
+	return New(token, "https://api.machines.dev", opts...)
 }
 
 // NewInternal returns a machines API using the internal url.
-func NewInternal(opts ...japi.JsonApiOpt) *Api {
-	return New("http://_api.internal:4280", opts...)
+func NewInternal(token string, opts ...ApiOpt) *Api {
+	return New(token, "http://_api.internal:4280", opts...)
+}
+
+func LeaseNonce(nonce string) ReqOpt {
+	return japi.ReqHeader("fly-machine-lease-nonce", nonce)
 }

@@ -40,10 +40,14 @@ func (p *Api) Req(method string, opts ...ReqOpt) *Req {
 		okCodes: []int{http.StatusOK},
 	}
 
-	for _, opt := range opts {
-		opt(n)
-	}
+	n.ApplyOpts(opts...)
 	return n
+}
+
+func (p *Req) ApplyOpts(opts ...ReqOpt) {
+	for _, opt := range opts {
+		opt(p)
+	}
 }
 
 // ReqPath sets the URL path for the request.

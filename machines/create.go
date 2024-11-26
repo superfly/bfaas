@@ -45,9 +45,11 @@ type MachineResp struct {
 	// Events
 }
 
-func (p *Api) Create(ctx context.Context, appName string, req *CreateMachineReq) (*MachineResp, error) {
+func (p *Api) Create(ctx context.Context, appName string, config *MachineConfig, opts ...ReqOpt) (*MachineResp, error) {
+	req := &CreateMachineReq{*config}
 	var resp MachineResp
 	r := p.json.Req("POST", japi.ReqPath("/v1/apps/%s/machines", appName), japi.ReqBody(req), japi.ReqRespBody(&resp))
+	r.ApplyOpts(opts...)
 	if err := r.Do(ctx); err != nil {
 		return nil, err
 	}
