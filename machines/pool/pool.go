@@ -103,13 +103,13 @@ func (p *Pool) cleanOwned(ctx context.Context) {
 }
 
 // getLeases returns all machines and leases for our appName.
-func (p *Pool) getLeases(ctx context.Context) (map[string]*LeaseResp, error) {
+func (p *Pool) getLeases(ctx context.Context) (map[string]*machines.LeaseResp, error) {
 	machs, err := p.machines.List(ctx, p.appName)
 	if err != nil {
 		return nil, fmt.Errorf("machines.List: %w", err)
 	}
 
-	resp := make(map[string]*LeaseResp)
+	resp := make(map[string]*machines.LeaseResp)
 	for _, m := range machs {
 		lease, err := p.machines.GetLease(ctx, p.appName, m.Id)
 		if err != nil {
