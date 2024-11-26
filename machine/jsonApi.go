@@ -10,6 +10,8 @@ import (
 	"net/url"
 )
 
+var NoReqBody interface{} = nil
+
 type JsonApi struct {
 	client *http.Client
 	apiUrl string
@@ -40,7 +42,7 @@ func (p *JsonApi) newRequest(ctx context.Context, method, path string, body io.R
 		return nil, errorf, errorf("NewRequestWithContext: %w", err)
 	}
 
-	req.Header.Set("Authorization", p.auth)
+	req.Header.Set("Authorization", "Bearer "+p.auth)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -93,9 +95,11 @@ func (p *JsonApi) Delete(ctx context.Context, path string, qs url.Values, resp i
 // parses the response body into resp.
 func (p *JsonApi) Post(ctx context.Context, path string, reqBody, resp interface{}) error {
 	buf := bytes.NewBuffer(nil)
-	if err := json.NewEncoder(buf).Encode(reqBody); err != nil {
-		_, errorf := p.makeUrl(path)
-		return errorf("encode request: %w", err)
+	if reqBody != nil {
+		if err := json.NewEncoder(buf).Encode(reqBody); err != nil {
+			_, errorf := p.makeUrl(path)
+			return errorf("encode request: %w", err)
+		}
 	}
 
 	req, errorf, err := p.newRequest(ctx, "POST", path, buf, nil)

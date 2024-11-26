@@ -10,13 +10,22 @@ import (
 )
 
 func main() {
-	machApi := machine.NewMock("go", "run", "cmd/basher/main.go")
-
-	s := os.Getenv("MAXREQTIME")
-	privKey := os.Getenv("PRIVATE")
+	workerApp := os.Getenv("WORKER_APP")
+	workerImage := os.Getenv("WORKER_IMAGE")
+	flyAuth := os.Getenv("FLY_TOKEN")
 	machId := os.Getenv("FLY_MACHINE_ID")
-	if machId == "" || privKey == "" || s == "" {
-		log.Fatalf("need MAXREQTIME, PRIVATE, and FLY_MACHINE_ID")
+	privKey := os.Getenv("PRIVATE")
+	s := os.Getenv("MAXREQTIME")
+	if workerApp == "" || workerImage == "" || flyAuth == "" || machId == "" || privKey == "" || s == "" {
+		log.Fatalf("need: WORKER_APP, WORKER_IMAGE, FLY_TOKEN, FLY_MACHINE_ID, PRIVATE, MAXREQTIME")
+	}
+
+	var machApi machine.Api
+	if workerApp == "mock" {
+		machApi = machine.NewMock("go", "run", "cmd/basher/main.go")
+	} else {
+		exec := []string{"/app/basher"}
+		machApi = machine.New(flyAuth, workerApp, workerImage, exec)
 	}
 
 	maxReqTime, err := time.ParseDuration(s)

@@ -23,8 +23,8 @@ func NewMock(cmd string, arg ...string) Api {
 	return &MockApi{cmd, arg}
 }
 
-func (p *MockApi) Start() (Machine, error) {
-	ctx, cancel := context.WithCancel(context.Background())
+func (p *MockApi) Start(origctx context.Context) (Machine, error) {
+	ctx, cancel := context.WithCancel(origctx)
 	cmd := exec.CommandContext(ctx, p.cmd, p.arg...)
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("Command.Start: %w", err)
@@ -56,7 +56,7 @@ func (p *MockMachine) Info() MachineInfo {
 	}
 }
 
-func (p *MockMachine) Stop() error {
+func (p *MockMachine) Stop(ctx context.Context) error {
 	log.Printf("stop machine %s", mockMachId)
 	p.cancel()
 	p.cmd.Wait()

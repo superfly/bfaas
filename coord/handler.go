@@ -13,13 +13,13 @@ import (
 var client = &http.Client{}
 
 func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
-	worker, err := s.machApi.Start()
+	worker, err := s.machApi.Start(r.Context())
 	if err != nil {
 		log.Printf("machApi.Start: %v", err)
 		http.Error(w, "create worker failed", http.StatusInternalServerError)
 		return
 	}
-	defer worker.Stop()
+	defer worker.Stop(context.Background())
 
 	ctx, _ := context.WithTimeout(r.Context(), s.maxReqTime)
 	url := fmt.Sprintf("http://%s/run", worker.Info().Addr)

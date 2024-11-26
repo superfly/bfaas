@@ -3,25 +3,13 @@ package machine
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"net/url"
 	"time"
 )
 
-const apiUrl = "http://_api.internal:4280" // XXX
-
-var client = &http.Client{}
-
 // MachinesApi provides a subset of the fly machines API.
 type MachinesApi struct {
 	JsonApi
-}
-
-var defaultMachinesApi = MachinesApi{
-	JsonApi: JsonApi{
-		client: client,
-		apiUrl: apiUrl,
-	},
 }
 
 type CreateMachineReq struct {
@@ -69,6 +57,20 @@ func (p *MachinesApi) Create(ctx context.Context, appName string, req *CreateMac
 		return nil, err
 	}
 
+	return &resp, nil
+}
+
+type StartMachineResp struct {
+	PreviousState string `json:"previous_state"`
+	Migrated      bool   `json:"migrated"`
+	NewHost       string `json:"new_host"`
+}
+
+func (p *MachinesApi) Start(ctx context.Context, appName, machId string) (*StartMachineResp, error) {
+	var resp StartMachineResp
+	if err := p.Post(ctx, fmt.Sprintf("/v1/apps/%s/machines/%s/start", appName, machId), NoReqBody, &resp); err != nil {
+		return nil, err
+	}
 	return &resp, nil
 }
 
