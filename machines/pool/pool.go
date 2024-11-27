@@ -55,18 +55,23 @@ func (mach *Mach) Free() {
 type Pool struct {
 	api       *machines.Api
 	name      string
+	size      int
 	appName   string
 	createReq *machines.CreateMachineReq
 
-	now func() time.Time
+	now func() time.Time // TODO: for mocking. do we really need this?
 
 	retryDelay time.Duration
 	createCtx  context.Context
-	shutdown   bool
+
+	// shutdown is true once shutdown has started.
+	// at this point all Machs are owned by the pool
+	// shutdown, and messages should no longer be
+	// queued on the free and broken channels.
+	shutdown bool
 
 	mu     sync.Mutex
-	nextId uint64
-	machs  map[string]*Mach
+	machs  map[string]*Mach // TODO: could just be a list.
 	free   chan *Mach
 	broken chan *Mach
 }
@@ -81,34 +86,41 @@ func RetryDelay(delay time.Duration) Opt {
 	return func(p *Pool) { p.retryDelay = delay }
 }
 
+func Size(size int) Opt {
+	return func(p *Pool) { p.size = size }
+}
+
 // NewPool creates a new machine pool of up to size machines owned by this pool.
 // Name should be a unique name for the pool, such as the pool machine name.
 // Pool creation can be slow.
-func NewPool(api *machines.Api, name string, size int, appName string, createReq *machines.CreateMachineReq, opts ...Opt) (*Pool, error) {
+func NewPool(api *machines.Api, name string, appName string, createReq *machines.CreateMachineReq, opts ...Opt) (*Pool, error) {
 	p := &Pool{
-		api:       api,
 		name:      name,
+		size:      2,
 		appName:   appName,
 		createReq: createReq,
+
+		api: api,
 
 		retryDelay: 10 * time.Second,
 		createCtx:  context.Background(),
 
-		nextId: rand.Uint64(), // note: not security sensitive
-		machs:  make(map[string]*Mach),
-		free:   make(chan *Mach, size),
-		broken: make(chan *Mach, size),
+		machs: make(map[string]*Mach),
 	}
 
 	for _, opt := range opts {
 		opt(p)
 	}
 
+	// construct after p.size might be set by options.
+	p.free = make(chan *Mach, p.size)
+	p.broken = make(chan *Mach, p.size)
+
 	// TODO: This will be slow...
 	// think about creating pool machines in a background thread.
 	// This will require thinking more about handling pool errors gracefully.
 	// as the errors will happen after the pool is partially created.
-	for i := 0; i < size; i++ {
+	for i := 0; i < p.size; i++ {
 		if err := p.addMach(p.createCtx); err != nil {
 			cerr := p.Close()
 			return nil, errors.Join(err, cerr)
@@ -162,15 +174,11 @@ func (p *Pool) Close() error {
 	return err
 }
 
-// addMach creates a machine and adds it to the pool's free list.
+// addMach creates an unstarted machine and adds it to the pool's free list.
 func (p *Pool) addMach(ctx context.Context) error {
-	p.mu.Lock()
-	id := p.nextId
-	p.nextId += 1
-	p.mu.Unlock()
-
 	req := *p.createReq
-	req.Name = fmt.Sprintf("worker-%s-%d", p.name, id)
+	req.SkipLaunch = false
+	req.Name = fmt.Sprintf("worker-%s-%d", p.name, rand.Uint64())
 	flym, err := p.api.Create(ctx, p.appName, &req)
 	if err != nil {
 		return fmt.Errorf("api.Create: %w", err)
@@ -197,7 +205,7 @@ func (p *Pool) Alloc(ctx context.Context) (*Mach, error) {
 		if mach == nil {
 			return nil, ErrPoolClosed
 		}
-		// continue with m...
+		// continue with mach...
 	}
 
 	if p.shutdown {
