@@ -25,8 +25,6 @@ type LeaseData struct {
 	Version   string `json:"version"`
 }
 
-// XXX TODO: need a way to pass lease nonce in headers in other requests... ugh. api getting complex.
-
 func (p *Api) Lease(ctx context.Context, appName, machId string, req *LeaseReq, opts ...ReqOpt) (*LeaseResp, error) {
 	var resp LeaseResp
 	r := p.json.Req("POST", japi.ReqPath("/v1/apps/%s/machines/%s/lease", appName, machId),

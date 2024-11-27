@@ -7,7 +7,10 @@ import (
 )
 
 type CreateMachineReq struct {
-	Config MachineConfig `json:"config"`
+	Config     MachineConfig `json:"config"`
+	Region     string        `json:"region"`
+	Name       string        `json:"name"`
+	SkipLaunch bool          `json:"skip_launch"`
 }
 
 type MachineConfig struct {
@@ -43,10 +46,11 @@ type MachineResp struct {
 	// CreatedAt, UpdatedAt
 	Config MachineConfig `json:"config"`
 	// Events
+
+	Nonce string `json:"nonce"`
 }
 
-func (p *Api) Create(ctx context.Context, appName string, config *MachineConfig, opts ...ReqOpt) (*MachineResp, error) {
-	req := &CreateMachineReq{*config}
+func (p *Api) Create(ctx context.Context, appName string, req *CreateMachineReq, opts ...ReqOpt) (*MachineResp, error) {
 	var resp MachineResp
 	r := p.json.Req("POST", japi.ReqPath("/v1/apps/%s/machines", appName), japi.ReqBody(req), japi.ReqRespBody(&resp))
 	r.ApplyOpts(opts...)

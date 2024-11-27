@@ -2,6 +2,7 @@ package machines
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -55,8 +56,15 @@ func TestApi(t *testing.T) {
 
 	// Create
 	log.Printf("start")
-	mach, err := api.Create(ctx, appName, &machConfig)
+	name := fmt.Sprintf("worker-%d", os.Getpid())
+	mach, err := api.Create(ctx, appName, &CreateMachineReq{
+		Config: machConfig,
+		Region: "qmx",
+		Name:   name,
+	})
 	assert.NoError(t, err)
+	assert.Equal(t, mach.Name, name)
+	assert.Equal(t, mach.Region, "qmx")
 	log.Printf("created %v: %+v", mach.Id, mach)
 
 	ok, err := api.WaitFor(ctx, appName, mach.Id, mach.InstanceId, 10*time.Second, "started")
