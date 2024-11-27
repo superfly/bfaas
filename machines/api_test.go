@@ -38,21 +38,30 @@ func findMach(machs []MachineResp, machId string) *MachineResp {
 	return nil
 }
 
+func getTestEnv(t *testing.T) (appName string, api *Api) {
+	appName = os.Getenv("APPNAME")
+	token := os.Getenv("FLY_API_TOKEN")
+	if appName == "" || token == "" {
+		t.Skip("requires env: APPNAME, FLY_API_TOKEN")
+	}
+
+	internal := os.Getenv("FLY_PUBLIC_IP") != ""
+	if internal {
+		api = NewInternal(token)
+	} else {
+		api = NewPublic(token)
+	}
+	return
+}
+
 // TestApi tests the API out by creating and managing machines.
 // It requires APPNAME, FLY_API_TOKEN environment variables and
 // the provided token must be capable of managing APPNAME.
 // It creates and destroy machines and should be used with care.
 // Run with `-v` if you want to be sure to know if it is skipped or not.
 func TestApi(t *testing.T) {
-	appName := os.Getenv("APPNAME")
-	token := os.Getenv("FLY_API_TOKEN")
-	if appName == "" || token == "" {
-		t.Skip("requires env: APPNAME, FLY_API_TOKEN")
-	}
-
 	ctx := context.Background()
-	api := NewPublic(token)
-	//image := "registry-1.docker.io/library/ubuntu:latest"
+	appName, api := getTestEnv(t)
 
 	// Create
 	log.Printf("start")
@@ -63,9 +72,13 @@ func TestApi(t *testing.T) {
 		Name:   name,
 	})
 	assert.NoError(t, err)
+
+	var nonce string
+	defer api.Destroy(ctx, appName, mach.Id, true, LeaseNonce(nonce))
+
+	log.Printf("created %v: %+v", mach.Id, mach)
 	assert.Equal(t, mach.Name, name)
 	assert.Equal(t, mach.Region, "qmx")
-	log.Printf("created %v: %+v", mach.Id, mach)
 
 	ok, err := api.WaitFor(ctx, appName, mach.Id, mach.InstanceId, 10*time.Second, "started")
 	assert.NoError(t, err)
@@ -111,7 +124,7 @@ func TestApi(t *testing.T) {
 	log.Printf("lease %v: %+v", mach.Id, lease)
 	assert.Equal(t, lease.Status, "success")
 	assert.Equal(t, lease.Data.Descr, "abc123")
-	nonce := lease.Data.Nonce
+	nonce = lease.Data.Nonce
 
 	lease, err = api.GetLease(ctx, appName, mach.Id)
 	assert.NoError(t, err)
@@ -125,6 +138,44 @@ func TestApi(t *testing.T) {
 
 	// Destroy
 	ok, err = api.Destroy(ctx, appName, mach.Id, true, LeaseNonce(nonce))
+	assert.NoError(t, err)
+	log.Printf("destroy %s: %v", mach.Id, ok)
+	assert.True(t, ok)
+}
+
+func TestCreateWithLease(t *testing.T) {
+	ctx := context.Background()
+	appName, api := getTestEnv(t)
+
+	// Create
+	log.Printf("start")
+	name := fmt.Sprintf("worker-leased-%d", os.Getpid())
+	mach, err := api.Create(ctx, appName, &CreateMachineReq{
+		Config:   machConfig,
+		Region:   "qmx",
+		Name:     name,
+		LeaseTTL: 500,
+	})
+	assert.NoError(t, err)
+	nonce := mach.Nonce
+	defer api.Destroy(ctx, appName, mach.Id, true, LeaseNonce(nonce))
+
+	log.Printf("created %v: %+v", mach.Id, mach)
+	assert.Equal(t, mach.Name, name)
+	assert.Equal(t, mach.Region, "qmx")
+	assert.True(t, len(nonce) > 0)
+
+	lease, err := api.GetLease(ctx, appName, mach.Id)
+	assert.NoError(t, err)
+	log.Printf("get lease %v: %+v", mach.Id, lease)
+	assert.Equal(t, lease.Status, "success")
+
+	// Destroy without lease fails
+	_, err = api.Destroy(ctx, appName, mach.Id, true)
+	assert.Error(t, err)
+
+	// Destroy
+	ok, err := api.Destroy(ctx, appName, mach.Id, true, LeaseNonce(nonce))
 	assert.NoError(t, err)
 	log.Printf("destroy %s: %v", mach.Id, ok)
 	assert.True(t, ok)

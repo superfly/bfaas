@@ -11,6 +11,7 @@ type CreateMachineReq struct {
 	Region     string        `json:"region"`
 	Name       string        `json:"name"`
 	SkipLaunch bool          `json:"skip_launch"`
+	LeaseTTL   int           `json:"lease_ttl"`
 }
 
 type MachineConfig struct {
