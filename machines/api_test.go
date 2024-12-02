@@ -38,7 +38,7 @@ func findMach(machs []MachineResp, machId string) *MachineResp {
 	return nil
 }
 
-func getTestEnv(t *testing.T) (appName string, api *Api) {
+func GetTestEnv(t *testing.T) (appName string, api *Api) {
 	appName = os.Getenv("APPNAME")
 	token := os.Getenv("FLY_API_TOKEN")
 	if appName == "" || token == "" {
@@ -61,7 +61,7 @@ func getTestEnv(t *testing.T) (appName string, api *Api) {
 // Run with `-v` if you want to be sure to know if it is skipped or not.
 func TestApi(t *testing.T) {
 	ctx := context.Background()
-	appName, api := getTestEnv(t)
+	appName, api := GetTestEnv(t)
 
 	// Create
 	log.Printf("start")
@@ -145,7 +145,7 @@ func TestApi(t *testing.T) {
 
 func TestCreateWithLease(t *testing.T) {
 	ctx := context.Background()
-	appName, api := getTestEnv(t)
+	appName, api := GetTestEnv(t)
 
 	// Create
 	log.Printf("start")
