@@ -12,18 +12,6 @@ import (
 	"github.com/superfly/coordBfaas/machines"
 )
 
-// TODO: Think about how to cleanup any machines that might be left over
-// from previous pools that have since been terminated without proper cleanup.
-
-// TODO: Think about how to allow graceful pool shutdown.
-
-// TODO: Think about how to handle errors where a machine in the pool might be "bad"
-// for some reason. Right now we allocate machines up front and never destroy them
-// or add new machines. We might be better to keep a list of bad machines, try
-// to periodically destroy them until they are destroyed, keep them out of rotation,
-// and add new workers to the pool (carefully, to avoid an unbounded number of machines
-// being created!)
-
 // TODO: think about logging options.
 
 var ErrPoolClosed = fmt.Errorf("The Pool Is Closed")
@@ -50,6 +38,8 @@ type Mach struct {
 
 // Free stops a machine and returns it to the pool.
 // This can block for a few seconds, but is safe to call as `go mach.Free()`.
+// It is an error to free a machine after the pool is closed and it may
+// result in a panic.
 func (mach *Mach) Free() {
 	mach.pool.Free(mach)
 }
@@ -75,7 +65,7 @@ type FlyPool struct {
 	shutdown bool
 
 	mu     sync.Mutex
-	machs  map[string]*Mach // TODO: could just be a list.
+	machs  []*Mach
 	free   chan *Mach
 	broken chan *Mach
 }
@@ -116,7 +106,7 @@ func New(api *machines.Api, name string, appName string, createReq *machines.Cre
 		retryDelay: 10 * time.Second,
 		createCtx:  context.Background(),
 
-		machs: make(map[string]*Mach),
+		machs: make([]*Mach, 0),
 	}
 
 	for _, opt := range opts {
@@ -158,11 +148,6 @@ func checkOk(ok bool, err error) error {
 // It accumulates all errors it encounters, but continues
 // to try to destroy each pool machine.
 func (p *FlyPool) Close() error {
-	// TODO: there are still races to think about here.
-	// Other code might have handle on in-use machs.
-	// They may try to use the mach after close destroys it.
-	// Think about how to avoid cascades of errors during shutdown...
-
 	log.Printf("pool: close")
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -210,7 +195,7 @@ func (p *FlyPool) addMach(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	p.machs[mach.Id] = mach
+	p.machs = append(p.machs, mach)
 	p.free <- mach
 	return nil
 }
@@ -218,6 +203,10 @@ func (p *FlyPool) addMach(ctx context.Context) error {
 // Alloc returns the next free machine, blocking if necessary.
 func (p *FlyPool) Alloc(ctx context.Context) (*Mach, error) {
 	log.Printf("pool: alloc wait")
+	if p.shutdown {
+		return nil, ErrPoolClosed
+	}
+
 	var mach *Mach
 	select {
 	case <-ctx.Done():
@@ -232,19 +221,11 @@ func (p *FlyPool) Alloc(ctx context.Context) (*Mach, error) {
 	}
 
 	log.Printf("pool: alloc machine %s %s", p.appName, mach.Id)
-	if p.shutdown {
-		return nil, ErrPoolClosed
-	}
-
 	log.Printf("pool: start %s %s", p.appName, mach.Id)
 	_, err := p.api.Start(ctx, p.appName, mach.Id)
 	if err != nil {
 		go p.Free(mach)
 		return nil, fmt.Errorf("api.Start %s: %w", mach.Id, err)
-	}
-
-	if p.shutdown {
-		return nil, ErrPoolClosed
 	}
 
 	log.Printf("pool: wait for %s %s started", p.appName, mach.Id)
@@ -278,10 +259,6 @@ func (p *FlyPool) Free(mach *Mach) {
 		return
 	}
 
-	if p.shutdown {
-		return
-	}
-
 	log.Printf("pool: wait for %s %s stopped", p.appName, mach.Id)
 	ok, err = p.api.WaitFor(ctx, p.appName, mach.Id, mach.fly.InstanceId, 10*time.Second, "stopped")
 	err = checkOk(ok, err)
@@ -291,24 +268,21 @@ func (p *FlyPool) Free(mach *Mach) {
 		return
 	}
 
-	if !p.shutdown {
-		// XXX can panic if p.broken closed, race condition.
-		p.free <- mach
-	}
+	p.free <- mach
 }
 
 func (p *FlyPool) setBroken(mach *Mach, brokenType BrokenType) {
 	log.Printf("pool: broken machine %v: %v", mach.Id, brokenType)
+	if p.shutdown {
+		return
+	}
+
 	mach.broken = brokenType
 	mach.retryTime = p.now().Add(p.retryDelay)
-	if !p.shutdown {
-		// XXX can panic if p.broken closed, race condition.
-		p.broken <- mach
-	}
+	p.broken <- mach
 }
 
 func (p *FlyPool) handleBroken() {
-	// TODO: contexts and timeouts for this stuff?
 	log.Printf("pool: handleBroken started")
 	for mach := range p.broken {
 		dt := p.now().Sub(mach.retryTime)
@@ -319,12 +293,10 @@ func (p *FlyPool) handleBroken() {
 
 		log.Printf("pool: handleBroken %s %v was %v, try again", p.appName, mach.Id, mach.broken)
 
-		// TODO: smarter handling. if it keeps failing maybe give up, destroy the thing
-		// and create a new one?
-		// but perhaps these kinds of failures are best handled by manual intervention.
-		p.Free(mach)
+		// Try to free it again, which may return it to the broken list if freeing it fails.
+		mach.Free()
 
-		// stagger the cleanup a little...
+		// stagger the cleanup a little if there are several broken machines...
 		time.Sleep(100 * time.Millisecond)
 	}
 	log.Printf("pool: handleBroken done")
