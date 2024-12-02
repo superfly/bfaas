@@ -13,16 +13,16 @@ import (
 var client = &http.Client{}
 
 func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
-	worker, err := s.machApi.Start(r.Context())
+	worker, err := s.pool.Alloc(context.Background())
 	if err != nil {
-		log.Printf("machApi.Start: %v", err)
+		log.Printf("pool.Alloc: %v", err)
 		http.Error(w, "create worker failed", http.StatusInternalServerError)
 		return
 	}
-	defer worker.Stop(context.Background())
+	defer worker.Free()
 
 	ctx, _ := context.WithTimeout(r.Context(), s.maxReqTime)
-	url := fmt.Sprintf("http://%s/run", worker.Info().Addr)
+	url := fmt.Sprintf("%s/run", worker.Url)
 	workReq, err := http.NewRequestWithContext(ctx, "POST", url, r.Body)
 	if err != nil {
 		log.Printf("NewRequestWithContext: %v", err)
@@ -30,7 +30,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auth := s.signer(time.Now(), worker.Info().Id)
+	auth := s.signer(time.Now(), worker.Id)
 	workReq.Header.Set("Authorization", auth)
 	log.Printf("making request for %v", s.maxReqTime)
 	workResp, err := client.Do(workReq)

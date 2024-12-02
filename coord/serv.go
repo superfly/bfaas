@@ -6,26 +6,26 @@ import (
 	"time"
 
 	"github.com/superfly/coordBfaas/auth"
-	"github.com/superfly/coordBfaas/machine"
+	"github.com/superfly/coordBfaas/machines/pool"
 )
 
 type Server struct {
 	*http.Server
 	signer     auth.Signer
 	maxReqTime time.Duration
-	machApi    machine.Api
+	pool       pool.Pool
 }
 
-func New(port int, privKey string, maxReqTime time.Duration, machApi machine.Api) (*Server, error) {
+func New(pool pool.Pool, port int, privKey string, maxReqTime time.Duration) (*Server, error) {
 	signer, err := auth.NewSigner(privKey)
 	if err != nil {
 		return nil, fmt.Errorf("building signer: %w", err)
 	}
 
 	server := &Server{
+		pool:       pool,
 		signer:     signer,
 		maxReqTime: maxReqTime,
-		machApi:    machApi,
 	}
 
 	mux := http.NewServeMux()

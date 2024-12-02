@@ -49,7 +49,7 @@ func getTestApi(t *testing.T) (appName string, api *machines.Api) {
 
 func TestPool(t *testing.T) {
 	appName, api := getTestApi(t)
-	pool, err := NewPool(api, "test", appName, createReq, Size(2))
+	pool, err := New(api, "test", appName, createReq, Size(2))
 	assert.NoError(t, err)
 
 	ctx := context.Background()

@@ -38,7 +38,7 @@ func findMach(machs []MachineResp, machId string) *MachineResp {
 	return nil
 }
 
-func GetTestEnv(t *testing.T) (appName string, api *Api) {
+func getTestApi(t *testing.T) (appName string, api *Api) {
 	appName = os.Getenv("APPNAME")
 	token := os.Getenv("FLY_API_TOKEN")
 	if appName == "" || token == "" {
@@ -61,7 +61,7 @@ func GetTestEnv(t *testing.T) (appName string, api *Api) {
 // Run with `-v` if you want to be sure to know if it is skipped or not.
 func TestApi(t *testing.T) {
 	ctx := context.Background()
-	appName, api := GetTestEnv(t)
+	appName, api := getTestApi(t)
 
 	// Create
 	log.Printf("start")
@@ -102,6 +102,16 @@ func TestApi(t *testing.T) {
 	ok, err = api.WaitFor(ctx, appName, mach.Id, mach.InstanceId, 10*time.Second, "stopped")
 	assert.NoError(t, err)
 	log.Printf("waitfor stopped %s: %v", mach.Id, ok)
+	assert.True(t, ok)
+
+	ok, err = api.Stop(ctx, appName, mach.Id)
+	assert.NoError(t, err)
+	log.Printf("stop again %s: %v", mach.Id, ok)
+	assert.True(t, ok)
+
+	ok, err = api.WaitFor(ctx, appName, mach.Id, mach.InstanceId, 10*time.Second, "stopped")
+	assert.NoError(t, err)
+	log.Printf("waitfor stopped again %s: %v", mach.Id, ok)
 	assert.True(t, ok)
 
 	startResp, err := api.Start(ctx, appName, mach.Id)
@@ -145,7 +155,7 @@ func TestApi(t *testing.T) {
 
 func TestCreateWithLease(t *testing.T) {
 	ctx := context.Background()
-	appName, api := GetTestEnv(t)
+	appName, api := getTestApi(t)
 
 	// Create
 	log.Printf("start")
