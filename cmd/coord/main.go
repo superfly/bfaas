@@ -11,6 +11,8 @@ import (
 )
 
 func main() {
+	log.Printf("starting coord")
+
 	// Get settings from env.
 	workerApp := os.Getenv("WORKER_APP")
 	workerImage := os.Getenv("WORKER_IMAGE")
@@ -18,6 +20,7 @@ func main() {
 	machId := os.Getenv("FLY_MACHINE_ID")
 	privKey := os.Getenv("PRIVATE")
 	reqTimeStr := os.Getenv("MAXREQTIME")
+	log.Printf("checking args")
 	switch workerApp {
 	case "mock":
 		if privKey == "" || reqTimeStr == "" {
@@ -34,6 +37,8 @@ func main() {
 		log.Fatalf("MAXREQTIME: %v", err)
 	}
 
+	log.Printf("starting pool")
+
 	// Make worker pool.
 	var p pool.Pool
 	if workerApp == "mock" {
@@ -43,7 +48,7 @@ func main() {
 		log.Printf("using fly pool")
 		machConfig := machines.MachineConfig{
 			Init: machines.Init{
-				Exec: []string{"/app/basher"},
+				Exec: []string{"/usr/local/bin/basher"},
 			},
 			Image: workerImage,
 			Restart: machines.Restart{
@@ -69,11 +74,13 @@ func main() {
 	}
 	defer p.Close()
 
+	log.Printf("building coord")
 	srv, err := coord.New(p, 8000, privKey, maxReqTime)
 	if err != nil {
 		log.Fatalf("coord.New: %v", err)
 	}
 
+	log.Printf("running server")
 	if err := coord.RunWithSignals(srv.Server, time.Second); err != nil {
 		log.Fatalf("RunWithSignals: %v", err)
 	}

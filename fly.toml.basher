@@ -1,0 +1,14 @@
+app = 'tim-basher'
+primary_region = 'qmx'
+
+[build]
+  dockerfile = "Dockerfile.basher"
+
+#[env]
+  # PUBLIC from secrets, generated with: go run ./cmd/genkey/main.go 
+  # FLY_MACHINE_ID from fly
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1

@@ -13,6 +13,6 @@ func main() {
 		return
 	}
 
-	fmt.Printf("public = %s\n", pub)
-	fmt.Printf("private = %s\n", priv)
+	fmt.Printf("PUBLIC=%s\n", pub)
+	fmt.Printf("PRIVATE=%s\n", priv)
 }
