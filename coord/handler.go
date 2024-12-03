@@ -14,15 +14,17 @@ import (
 var client = &http.Client{}
 
 var retryTimes = 5
-var retryDelay = 50 * time.Millisecond
+var retryDelay = 20 * time.Millisecond
 
 // doWithRetry will retry a request several times if the connection is refused,
 // giving the worker machine some time to start up its http server.
 func doWithRetry(req *http.Request) (resp *http.Response, err error) {
+	delay := retryDelay
 	for i := 0; i < retryTimes; i += 1 {
 		if i > 0 {
-			log.Printf("%v: retrying", err)
-			time.Sleep(retryDelay)
+			log.Printf("%v: retrying after %v", err, delay)
+			time.Sleep(delay)
+			delay = 2 * delay
 		}
 
 		resp, err = client.Do(req)

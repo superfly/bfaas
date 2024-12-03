@@ -101,6 +101,8 @@ func New(api *machines.Api, name string, appName string, createReq *machines.Cre
 		createReq: createReq,
 		machPort:  8000,
 
+		now: time.Now,
+
 		api: api,
 
 		retryDelay: 10 * time.Second,
