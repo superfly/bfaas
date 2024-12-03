@@ -1,6 +1,7 @@
 package coord
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -19,6 +20,13 @@ var retryDelay = 20 * time.Millisecond
 // doWithRetry will retry a request several times if the connection is refused,
 // giving the worker machine some time to start up its http server.
 func doWithRetry(req *http.Request) (resp *http.Response, err error) {
+	// We need the body multiple times, read it into memory.
+	body, err := io.ReadAll(req.Body)
+	req.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("error reading body: %v", err)
+	}
+
 	delay := retryDelay
 	for i := 0; i < retryTimes; i += 1 {
 		if i > 0 {
@@ -27,6 +35,7 @@ func doWithRetry(req *http.Request) (resp *http.Response, err error) {
 			delay = 2 * delay
 		}
 
+		req.Body = io.NopCloser(bytes.NewBuffer(body))
 		resp, err = client.Do(req)
 		if err == nil || !errors.Is(err, syscall.ECONNREFUSED) {
 			return
