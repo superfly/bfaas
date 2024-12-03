@@ -19,7 +19,7 @@ cleaning up the worker pool.  Figure out why not and fix this.
 
 Coord expects these values from the environment:
 
-* `MAXREQTIME`: golang format duration string for how long to let requests live. ie. `"10m"`.
+* `MAXREQTIME`: golang format duration string for how long to let requests live. ie. `"10s"`.
 * `PRIVATE`: private key to use to generate authn when making requests to workers.
 * `WORKER_APP`: the app name to use when creating worker machines. If this is `mock` then a mock pool will be used.
 * `WORKER_IMAGE`: the image to use when creating worker machines (!mock).
@@ -51,7 +51,7 @@ PRIVATE=xxx
 % fly secrets set PRIVATE=$PRIVATE
 % fly secrets set WORKER_APP=tim-basher
 % fly secrets set WORKER_IMAGE=$IMAGE
-% fly secrets set MAXREQTIME=10m
+% fly secrets set MAXREQTIME=10s
 % fly secrets set FLY_TOKEN="$(fly -a tim-basher tokens create deploy)"
 % fly deploy
 
@@ -72,7 +72,7 @@ Coord/basher can be tested locally with a mock pool:
 
 * Generate a key, set `PRIVATE` and `PUBLIC` in the environment
 * Set `WORKER_APP` to `mock`.
-* Set `MAXREQTIME` to something like `10m`.
+* Set `MAXREQTIME` to something like `10s`.
 * Set `FLY_MACHINE_ID` to something like `m8001`.
 * Run coord: `go run ./cmd/coord/main.go`
 * Test with curl: `curl -s -D- http://localhost:8000/run -d uptime`
