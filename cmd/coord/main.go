@@ -20,6 +20,8 @@ func main() {
 	machId := os.Getenv("FLY_MACHINE_ID")
 	privKey := os.Getenv("PRIVATE")
 	reqTimeStr := os.Getenv("MAXREQTIME")
+	region := os.Getenv("FLY_REGION")
+
 	log.Printf("checking args")
 	switch workerApp {
 	case "mock":
@@ -30,6 +32,10 @@ func main() {
 		if workerApp == "" || workerImage == "" || flyAuth == "" || machId == "" || privKey == "" || reqTimeStr == "" {
 			log.Fatalf("need: WORKER_APP, WORKER_IMAGE, FLY_TOKEN, FLY_MACHINE_ID, PRIVATE, MAXREQTIME")
 		}
+	}
+
+	if region == "" {
+		region = "qmx"
 	}
 
 	maxReqTime, err := time.ParseDuration(reqTimeStr)
@@ -47,9 +53,6 @@ func main() {
 	} else {
 		log.Printf("using fly pool")
 		machConfig := machines.MachineConfig{
-			Init: machines.Init{
-				Exec: []string{"/usr/local/bin/basher"},
-			},
 			Image: workerImage,
 			Restart: machines.Restart{
 				Policy: "no",
@@ -62,7 +65,7 @@ func main() {
 		}
 		createReq := &machines.CreateMachineReq{
 			Config: machConfig,
-			Region: "qmx",
+			Region: region, // same region as coord.
 		}
 
 		api := machines.NewInternal(flyAuth)

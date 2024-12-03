@@ -9,5 +9,8 @@ RUN go build -v -o /basher ./cmd/basher/main.go
 
 FROM debian:bookworm
 
+# load up some goodies for people to play with
+RUN apt-get update && apt-get install -y iproute2 procps jq curl unzip git file bsdextrautils coreutils lsb-release
+
 COPY --from=builder /basher /usr/local/bin/
 CMD ["/usr/local/bin/basher"]

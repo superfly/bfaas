@@ -40,5 +40,12 @@ PRIVATE=xxx
 % fly deploy
 
 # Try it out
-% curl -s -D- https://tim-coord.fly.dev/run -d ls
+% curl -s -D- https://tim-coord.fly.dev/run -d uptime
+```
+
+To update the basher image
+```
+% fly deploy -c fly.toml.basher --update-only
+   ... capture IMAGE=registry.fly.io/tim-basher:deployment-01JE4XPGN5KVRBE2Z1H0FWGDPA
+% fly secrets set WORKER_IMAGE=$IMAGE
 ```
