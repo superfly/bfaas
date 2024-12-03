@@ -67,7 +67,7 @@ func main() {
 
 		api := machines.NewInternal(flyAuth)
 		var err error
-		p, err = pool.New(api, "workers", workerApp, createReq, pool.Size(2))
+		p, err = pool.New(api, "workers", workerApp, createReq, pool.Size(2), pool.Port(8001))
 		if err != nil {
 			log.Fatalf("pool.New: %v", err)
 		}

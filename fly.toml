@@ -4,7 +4,7 @@
 #
 
 app = 'tim-coord'
-primary_region = 'qmx'
+primary_region = 'sjc'
 
 [build]
 
