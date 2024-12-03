@@ -7,6 +7,9 @@ A coordinator that runs unsafe code in a work machine with strict time limits.
 No network policy is set on basher worker machines at the moment.
 This means that workers have access to the org's 6pn and can talk to other fly apps.
 
+I turned off auto-start/auto-stop because when coord was being stopped it wasnt
+cleaning up the worker pool.  Figure out why not and fix this.
+
 # What's here
 
 - `cmd/coord`: the server that starts basher works and proxies requests to them with a time limit.
