@@ -11,8 +11,8 @@ This means that workers have access to the org's 6pn and can talk to other fly a
 
 - `cmd/coord`: the server that starts basher works and proxies requests to them with a time limit.
 - `cmd/basher`: the server that runs untrusted code.
-- `cmd/genauth`: command line that generates pub/priv key pairs for basher auth.
 - `cmd/genauth`: command line for generating an auth value for basher.
+- `cmd/genkey`: command line that generates pub/priv key pairs for basher authn.
 
 Coord expects these values from the environment:
 
