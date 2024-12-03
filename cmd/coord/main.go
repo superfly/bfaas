@@ -17,7 +17,6 @@ func main() {
 	workerApp := os.Getenv("WORKER_APP")
 	workerImage := os.Getenv("WORKER_IMAGE")
 	flyAuth := os.Getenv("FLY_TOKEN")
-	machId := os.Getenv("FLY_MACHINE_ID")
 	privKey := os.Getenv("PRIVATE")
 	reqTimeStr := os.Getenv("MAXREQTIME")
 	region := os.Getenv("FLY_REGION")
@@ -29,8 +28,8 @@ func main() {
 			log.Fatalf("need: PRIVATE, MAXREQTIME")
 		}
 	default:
-		if workerApp == "" || workerImage == "" || flyAuth == "" || machId == "" || privKey == "" || reqTimeStr == "" {
-			log.Fatalf("need: WORKER_APP, WORKER_IMAGE, FLY_TOKEN, FLY_MACHINE_ID, PRIVATE, MAXREQTIME")
+		if workerApp == "" || workerImage == "" || flyAuth == "" || privKey == "" || reqTimeStr == "" {
+			log.Fatalf("need: WORKER_APP, WORKER_IMAGE, FLY_TOKEN, PRIVATE, MAXREQTIME")
 		}
 	}
 
