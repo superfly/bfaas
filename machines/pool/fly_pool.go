@@ -471,6 +471,15 @@ func (p *FlyPool) claimOrphans(ctx context.Context, ms []machines.MachineResp) [
 	return unhandled
 }
 
+func sleepWithContext(ctx context.Context, dt time.Duration) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(dt):
+		return nil
+	}
+}
+
 func (p *FlyPool) clean(ctx context.Context) {
 	for {
 		ms, err := p.api.List(ctx, p.appName)
@@ -481,6 +490,8 @@ func (p *FlyPool) clean(ctx context.Context) {
 			p.cleanOrphans(ctx, ms)
 		}
 
-		time.Sleep(cleanerDelay)
+		if err := sleepWithContext(ctx, cleanerDelay); err != nil {
+			break
+		}
 	}
 }

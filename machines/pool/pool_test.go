@@ -59,6 +59,6 @@ func TestPool(t *testing.T) {
 
 	m.Free()
 
-	err = pool.Close()
+	err = pool.Destroy()
 	assert.NoError(t, err)
 }
