@@ -439,9 +439,10 @@ func (p *FlyPool) getLease(ctx context.Context, machId string) (*machines.LeaseD
 // It would be greatly simplified if listing machines returned back lease information.
 func (p *FlyPool) cleanMach(ctx context.Context, m *machines.MachineResp) int {
 	p.mu.Lock()
-	alreadyInOurPool := p.machs[m.Id] != nil
+	poolMach := p.machs[m.Id]
 	p.mu.Unlock()
 
+	alreadyInOurPool := poolMach != nil
 	ours := m.Config.Metadata[MetaPoolKey] == p.metadata
 	createdAt, _ := time.Parse(time.RFC3339, m.CreatedAt)
 	age := p.now().Sub(createdAt)
@@ -449,6 +450,12 @@ func (p *FlyPool) cleanMach(ctx context.Context, m *machines.MachineResp) int {
 	log.Printf("pool: clean: mach %v: age=%v, ours=%v inpool=%v", m.Id, age, ours, alreadyInOurPool)
 
 	if alreadyInOurPool {
+		if !poolMach.leaseSufficient(0) {
+			// Destroy it, but leave it in our pool and free queue.
+			// It will get discarded when someone tries to allocate it.
+			log.Printf("pool: clean: mach %v: age=%v, destroying, ours", m.Id, age)
+			poolMach.destroy(ctx)
+		}
 		return 0
 	}
 

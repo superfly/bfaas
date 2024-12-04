@@ -25,6 +25,7 @@ Coord expects these values from the environment:
 * `WORKER_IMAGE`: the image to use when creating worker machines (!mock).
 * `FLY_TOKEN`: the token to use with the machines API when creating machines (!mock).
 * `FLY_REGION`: the region to spawn worker machines in (!mock).
+* `FLY_MACHINE_ID`: machine ID to use as the pool name.
 
 Basher expects these values from the environment:
 
