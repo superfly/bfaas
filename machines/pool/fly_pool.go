@@ -56,6 +56,7 @@ type FlyPool struct {
 	// be performed.
 	isShutdown bool
 	cancel     context.CancelFunc
+	wg         sync.WaitGroup
 
 	mu       sync.Mutex
 	size     int // note: size may be greater than len(machs) during machine creation.
@@ -137,9 +138,10 @@ func New(api *machines.Api, poolName string, appName string, createReq *machines
 	}
 
 	// claim orphans for our pool and cleanup, in the background.
+	p.wg.Add(2)
+	go p.handleDiscards(ctx)
 	go p.clean(ctx)
 
-	log.Printf("pool: starting with %d workers", p.size) // TODO: p.size is not atomic
 	return p, nil
 }
 
@@ -158,6 +160,7 @@ func (p *FlyPool) shutdown() {
 	close(p.free)
 	close(p.discards)
 	p.cancel()
+	p.wg.Wait()
 }
 
 // Close stops all machines in the pool.
@@ -201,8 +204,8 @@ func (p *FlyPool) Destroy() error {
 	return err
 }
 
-// addFreeMach adds the mach to the pool as a free machine.
-// It should never be called when the machine is already in the pool.
+// addFreeMach adds the mach to the pool as a free machine if it is needed.
+// The machine should be "stopped" and should not yet be in the pool.
 func (p *FlyPool) addFreeMach(mach *Mach) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -238,7 +241,12 @@ func (p *FlyPool) createMach(ctx context.Context, start bool) (*Mach, error) {
 		return nil, fmt.Errorf("api.Create %s: %w", p.appName, err)
 	}
 
-	return newMach(p, flym, flym.Nonce, expire, start), nil
+	mach := newMach(p, flym, flym.Nonce, expire, start)
+	if start {
+		mach.waitFor(ctx, "started")
+	}
+
+	return mach, nil
 }
 
 // getFreeImmediately returns the next free machine if there are any immediately available.
@@ -246,8 +254,9 @@ func (p *FlyPool) getFreeImmediately() *Mach {
 	select {
 	case mach := <-p.free:
 		return mach
+	default:
+		return nil
 	}
-	return nil
 }
 
 // waitForFree returns the next free machine, waiting for one if none is available.
@@ -258,11 +267,11 @@ func (p *FlyPool) waitForFree(ctx context.Context) (*Mach, error) {
 
 	select {
 	case <-ctx.Done():
-		log.Printf("pool: alloc cancelled context")
+		log.Printf("pool: alloc: cancelled")
 		return nil, ctx.Err()
 	case mach := <-p.free:
 		if mach == nil {
-			log.Printf("pool: alloc cancelled with closed pool")
+			log.Printf("pool: alloc: cancelled: pool closed")
 			return nil, ErrPoolClosed
 		}
 		return mach, nil
@@ -281,6 +290,7 @@ func (p *FlyPool) growPool(ctx context.Context) (*Mach, error) {
 	p.mu.Unlock()
 
 	if !create {
+		log.Printf("pool: growPool: cant grow")
 		return nil, nil
 	}
 
@@ -290,7 +300,7 @@ func (p *FlyPool) growPool(ctx context.Context) (*Mach, error) {
 		p.size -= 1 // we failed, roll back the size change.
 		p.mu.Unlock()
 
-		log.Printf("pool: growPool createMach failed: %v", err)
+		log.Printf("pool: growPool: createMach failed: %v", err)
 		return nil, err
 	}
 
@@ -308,20 +318,27 @@ func (p *FlyPool) growPool(ctx context.Context) (*Mach, error) {
 func (p *FlyPool) allocLeased(ctx context.Context) (*Mach, error) {
 	var err error
 	for {
-		mach := p.getFreeImmediately()
+		mach, err := func() (*Mach, error) {
+			log.Printf("pool: alloc: get free immediately xxx")
+			mach := p.getFreeImmediately()
+			if mach != nil {
+				return mach, nil
+			}
 
-		if mach == nil {
+			log.Printf("pool: alloc: grow pool xxx")
 			mach, err = p.growPool(ctx)
 			if err != nil {
 				return nil, err
 			}
-		}
-
-		if mach == nil {
-			mach, err = p.waitForFree(ctx)
-			if err != nil {
-				return nil, err
+			if mach != nil {
+				return mach, nil
 			}
+
+			log.Printf("pool: alloc: wait for free xxx")
+			return p.waitForFree(ctx)
+		}()
+		if err != nil {
+			return nil, err
 		}
 
 		if mach.leaseSufficient(p.workerTime) {
@@ -335,14 +352,13 @@ func (p *FlyPool) allocLeased(ctx context.Context) (*Mach, error) {
 
 // Alloc returns the next free machine, blocking if necessary.
 func (p *FlyPool) Alloc(ctx context.Context) (*Mach, error) {
-	log.Printf("pool: alloc")
 	mach, err := p.allocLeased(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	if err := mach.start(ctx); err != nil {
-		log.Printf("pool: startMach: %v", err)
+		log.Printf("pool: mach.start: %v", err)
 		p.discardMach(mach, "start machine failed")
 		return nil, err
 	}
@@ -355,14 +371,13 @@ func (p *FlyPool) Alloc(ctx context.Context) (*Mach, error) {
 // Freeing is done in a background context to stop machines as best as possible.
 // This can block for a few seconds, but is safe to call as `go p.Free(mach)`.
 func (p *FlyPool) freeMach(mach *Mach) {
-	log.Printf("pool: free %s %s", p.appName, mach.Id)
 	if p.isShutdown {
 		return
 	}
 
 	ctx := context.Background()
 	if err := mach.stop(ctx); err != nil {
-		log.Printf("free: stopMach: %v", err)
+		log.Printf("pool free: stopMach: %v", err)
 		p.discardMach(mach, "stop machine failed")
 		return
 	}
@@ -386,7 +401,7 @@ func (p *FlyPool) discardMach(mach *Mach, msg string) {
 // a minimal-effort attempt at destroying the machine.
 // Failures here will be caught by this or another pool's cleanOrphans cleaner.
 func (p *FlyPool) handleDiscards(ctx context.Context) {
-	log.Printf("pool: handleDiscards started")
+	log.Printf("pool: handleDiscards: started")
 	for mach := range p.discards {
 		if err := mach.destroy(ctx); err != nil {
 			log.Printf("pool: handleDiscards: %v", err)
@@ -394,9 +409,12 @@ func (p *FlyPool) handleDiscards(ctx context.Context) {
 		}
 
 		// stagger the cleanup a little if there are several machines to discard...
-		time.Sleep(100 * time.Millisecond)
+		if err := sleepWithContext(ctx, 100*time.Millisecond); err != nil {
+			break
+		}
 	}
-	log.Printf("pool: handleDiscards exiting")
+	log.Printf("pool: handleDiscards: exiting")
+	p.wg.Done()
 }
 
 func (p *FlyPool) getLease(ctx context.Context, machId string) (*machines.LeaseData, error) {
@@ -424,10 +442,11 @@ func (p *FlyPool) cleanMach(ctx context.Context, m *machines.MachineResp) int {
 	alreadyInOurPool := p.machs[m.Id] != nil
 	p.mu.Unlock()
 
-	ours := m.Config.Metadata[MetaPoolKey] != p.metadata
+	ours := m.Config.Metadata[MetaPoolKey] == p.metadata
 	createdAt, _ := time.Parse(time.RFC3339, m.CreatedAt)
 	age := p.now().Sub(createdAt)
 	probablyExpired := age > p.leaseTime
+	log.Printf("pool: clean: mach %v: age=%v, ours=%v inpool=%v", m.Id, age, ours, alreadyInOurPool)
 
 	if alreadyInOurPool {
 		return 0
@@ -436,7 +455,7 @@ func (p *FlyPool) cleanMach(ctx context.Context, m *machines.MachineResp) int {
 	if !ours {
 		if probablyExpired {
 			// Try to destroy it. This wont work if it has a valid lease since we don't provide the lease nonce.
-			log.Printf("pool: cleanMach %v: age=%v, destroying, not ours", m.Id, age)
+			log.Printf("pool: clean: mach %v: age=%v, destroying, not ours", m.Id, age)
 			p.api.Destroy(ctx, p.appName, m.Id, true)
 		}
 		return 0
@@ -444,8 +463,9 @@ func (p *FlyPool) cleanMach(ctx context.Context, m *machines.MachineResp) int {
 
 	lease, err := p.getLease(ctx, m.Id)
 	if err != nil {
-		log.Printf("pool: cleanMach %v: destroying, error getting lease: %v", m.Id, err)
+		log.Printf("pool: clean: mach %v: destroying, error getting lease: %v", m.Id, err)
 		p.api.Destroy(ctx, p.appName, m.Id, true)
+		return 0
 	}
 
 	leaseExpires := time.Unix(lease.ExpiresAt, 0)
@@ -468,7 +488,7 @@ func (p *FlyPool) cleanMach(ctx context.Context, m *machines.MachineResp) int {
 		return nil
 	}()
 	if err != nil {
-		log.Printf("pool: cleanMach %v: destroying: %v", m.Id, err)
+		log.Printf("pool: clean: mach %v: destroying: %v", m.Id, err)
 		mach.destroy(ctx)
 		return 0
 	} else {
@@ -477,7 +497,7 @@ func (p *FlyPool) cleanMach(ctx context.Context, m *machines.MachineResp) int {
 }
 
 func (p *FlyPool) clean(ctx context.Context) {
-	log.Printf("pool: clean starting")
+	log.Printf("pool: clean: starting")
 	for {
 		log.Printf("pool: cleaning")
 		ms, err := p.api.List(ctx, p.appName)
@@ -495,5 +515,6 @@ func (p *FlyPool) clean(ctx context.Context) {
 			break
 		}
 	}
-	log.Printf("pool: clean exiting")
+	log.Printf("pool: clean: exiting")
+	p.wg.Done()
 }

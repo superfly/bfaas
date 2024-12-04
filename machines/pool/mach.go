@@ -48,6 +48,17 @@ func newMach(p *FlyPool, flym *machines.MachineResp, leaseNonce string, leaseExp
 	return m
 }
 
+func (mach *Mach) waitFor(ctx context.Context, state string) error {
+	log.Printf("pool: wait for %s %s %s", mach.pool.appName, mach.Id, state)
+	nonceOpt := machines.LeaseNonce(mach.leaseNonce)
+	ok, err := mach.pool.api.WaitFor(ctx, mach.pool.appName, mach.Id, mach.InstanceId, 10*time.Second, state, nonceOpt)
+	err = checkOk(ok, err)
+	if err != nil {
+		return fmt.Errorf("api.WaitFor %s %v: %w", mach.Id, state, err)
+	}
+	return nil
+}
+
 func (mach *Mach) start(ctx context.Context) error {
 	log.Printf("pool: start %s %s", mach.pool.appName, mach.Id)
 	if mach.started {
@@ -60,11 +71,8 @@ func (mach *Mach) start(ctx context.Context) error {
 		return fmt.Errorf("api.Start %s: %w", mach.Id, err)
 	}
 
-	log.Printf("pool: wait for %s %s started", mach.pool.appName, mach.Id)
-	ok, err := mach.pool.api.WaitFor(ctx, mach.pool.appName, mach.Id, mach.InstanceId, 10*time.Second, "started", nonceOpt)
-	err = checkOk(ok, err)
-	if err != nil {
-		return fmt.Errorf("api.WaitFor started %v: %w", mach.Id, err)
+	if err := mach.waitFor(ctx, "started"); err != nil {
+		return err
 	}
 	mach.started = true
 	return nil
@@ -83,11 +91,8 @@ func (mach *Mach) stop(ctx context.Context) error {
 		return fmt.Errorf("api.Stop %s: %w", mach.Id, err)
 	}
 
-	log.Printf("pool: wait for %s %s stopped", mach.pool.appName, mach.Id)
-	ok, err := mach.pool.api.WaitFor(ctx, mach.pool.appName, mach.Id, mach.InstanceId, 10*time.Second, "stopped", nonceOpt)
-	err = checkOk(ok, err)
-	if err != nil {
-		return fmt.Errorf("api.WaitFor stopped %v: %w", mach.Id, err)
+	if err := mach.waitFor(ctx, "stopped"); err != nil {
+		return err
 	}
 	return nil
 }

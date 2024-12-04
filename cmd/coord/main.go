@@ -20,6 +20,7 @@ func main() {
 	privKey := os.Getenv("PRIVATE")
 	reqTimeStr := os.Getenv("MAXREQTIME")
 	region := os.Getenv("FLY_REGION")
+	machId := os.Getenv("FLY_MACHINE_ID")
 
 	log.Printf("checking args")
 	switch workerApp {
@@ -28,8 +29,8 @@ func main() {
 			log.Fatalf("need: PRIVATE, MAXREQTIME")
 		}
 	default:
-		if workerApp == "" || workerImage == "" || flyAuth == "" || privKey == "" || reqTimeStr == "" {
-			log.Fatalf("need: WORKER_APP, WORKER_IMAGE, FLY_TOKEN, PRIVATE, MAXREQTIME")
+		if workerApp == "" || workerImage == "" || flyAuth == "" || privKey == "" || reqTimeStr == "" || machId == "" {
+			log.Fatalf("need: WORKER_APP, WORKER_IMAGE, FLY_TOKEN, PRIVATE, MAXREQTIME, FLY_MACHINE_ID")
 		}
 	}
 
@@ -69,7 +70,9 @@ func main() {
 
 		api := machines.NewInternal(flyAuth)
 		var err error
-		p, err = pool.New(api, "workers", workerApp, createReq, pool.Size(2), pool.Port(8001))
+		p, err = pool.New(api, machId, workerApp, createReq,
+			pool.Size(2), pool.Port(8001), pool.WorkerTime(2*maxReqTime),
+			pool.LeaseTime(30*time.Minute))
 		if err != nil {
 			log.Fatalf("pool.New: %v", err)
 		}

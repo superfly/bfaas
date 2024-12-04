@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/alecthomas/assert/v2"
 
@@ -48,8 +49,10 @@ func getTestApi(t *testing.T) (appName string, api *machines.Api) {
 }
 
 func TestPool(t *testing.T) {
+	poolName := "TestPool"
 	appName, api := getTestApi(t)
-	pool, err := New(api, "test", appName, createReq, Size(2))
+	log.Printf("create pool")
+	pool, err := New(api, poolName, appName, createReq, Size(2), WorkerTime(time.Minute), LeaseTime(5*time.Minute))
 	assert.NoError(t, err)
 
 	ctx := context.Background()
@@ -59,6 +62,27 @@ func TestPool(t *testing.T) {
 
 	m.Free()
 
+	m, err = pool.Alloc(ctx)
+	assert.NoError(t, err)
+	log.Printf("allocated %+v", m)
+
+	m.Free()
+
+	log.Printf("close pool")
+	err = pool.Close()
+	assert.NoError(t, err)
+
+	log.Printf("recreate pool")
+	pool, err = New(api, poolName, appName, createReq, Size(2), WorkerTime(time.Minute), LeaseTime(5*time.Minute))
+	assert.NoError(t, err)
+
+	m, err = pool.Alloc(ctx)
+	assert.NoError(t, err)
+	log.Printf("allocated %+v", m)
+
+	m.Free()
+
+	log.Printf("destroy pool")
 	err = pool.Destroy()
 	assert.NoError(t, err)
 }
