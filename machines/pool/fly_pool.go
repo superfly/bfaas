@@ -25,6 +25,15 @@ func checkOk(ok bool, err error) error {
 	return err
 }
 
+func sleepWithContext(ctx context.Context, dt time.Duration) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(dt):
+		return nil
+	}
+}
+
 // FlyPool is a pool of Fly machines.
 type FlyPool struct {
 	api      *machines.Api
@@ -114,14 +123,18 @@ func New(api *machines.Api, poolName string, appName string, createReq *machines
 	p.free = make(chan *Mach, p.capacity)
 	p.discards = make(chan *Mach, p.capacity) // TODO: think about sizing. reclaiming existing machines might produce more than capacity
 
-	// Add one free machine to the pool to detect creation errors early.
 	ctx, cancel := context.WithCancel(context.Background())
-	mach, err := p.createMach(ctx, false)
-	if err != nil {
-		return nil, err
-	}
-	p.addFreeMach(mach)
 	p.cancel = cancel
+
+	if false {
+		// Add one free machine to the pool to detect creation errors early.
+		mach, err := p.createMach(ctx, false)
+		if err != nil {
+			p.cancel()
+			return nil, err
+		}
+		p.addFreeMach(mach)
+	}
 
 	// claim orphans for our pool and cleanup, in the background.
 	go p.clean(ctx)
@@ -225,7 +238,7 @@ func (p *FlyPool) createMach(ctx context.Context, start bool) (*Mach, error) {
 		return nil, fmt.Errorf("api.Create %s: %w", p.appName, err)
 	}
 
-	return newMach(p, flym, expire, start), nil
+	return newMach(p, flym, flym.Nonce, expire, start), nil
 }
 
 // getFreeImmediately returns the next free machine if there are any immediately available.
@@ -383,50 +396,69 @@ func (p *FlyPool) handleDiscards(ctx context.Context) {
 		// stagger the cleanup a little if there are several machines to discard...
 		time.Sleep(100 * time.Millisecond)
 	}
-	log.Printf("pool: handleDiscards done")
+	log.Printf("pool: handleDiscards exiting")
 }
 
-// cleanOrpans destroys any worker machines that are not owned by any pool.
-// A machine is owned by a pool if the pool has a valid lease on it, and
-// has marked the pool ownership in the machine's metadata.
-func (p *FlyPool) cleanOrphans(ctx context.Context, ms []machines.MachineResp) {
-	for _, m := range ms {
-		hasLease := m.Nonce != ""
-		if hasLease {
-			continue
-		}
-
-		// This would fail without a nonce if there was a lease.
-		p.api.Destroy(ctx, p.appName, m.Id, true)
-
-		// stagger the cleanup a little if there are several machines to discard...
-		time.Sleep(100 * time.Millisecond)
+func (p *FlyPool) getLease(ctx context.Context, machId string) (*machines.LeaseData, error) {
+	lease, err := p.api.GetLease(ctx, p.appName, machId)
+	if err != nil {
+		return nil, fmt.Errorf("api.GetLease: %w", err)
 	}
+	if lease.Status != "success" {
+		return nil, fmt.Errorf("api.GetLease: !success")
+	}
+	return &lease.Data, nil
 }
 
-// claimOrphans enumerates all machines and processes all the machines
-// that are owned by this pool (or a previous incarnation of this pool).
-// It adopts orphans that are suitable for use, up to the pool capacity,
-// and discards any others.
-func (p *FlyPool) claimOrphans(ctx context.Context, ms []machines.MachineResp) []machines.MachineResp {
-	reconstitute := func(mach *Mach) error {
-		// If it was orphaned while running, make sure to stop it.
-		if err := mach.stop(ctx); err != nil {
-			return err
-		}
+// cleanMach performs cleanup operations on a machine, if necessary.
+// It destroys machines that do not have an active lease.
+// It adopts machines into the pool if they are owned by this pool instance and not yet in the pool,
+// or destroys them if they are not suitable or needed.
+// It returns the number of machines adopted into this pool.
+//
+// Note: This is complicated for efficiency, to avoid doing too many fly API calls.
+// This is run periodically for every machine in the worker app.
+// It would be greatly simplified if listing machines returned back lease information.
+func (p *FlyPool) cleanMach(ctx context.Context, m *machines.MachineResp) int {
+	p.mu.Lock()
+	alreadyInOurPool := p.machs[m.Id] != nil
+	p.mu.Unlock()
 
-		lease, err := p.api.GetLease(ctx, p.appName, mach.Id)
-		if err != nil {
-			return fmt.Errorf("api.GetLease: %w", err)
-		}
-		if lease.Status != "success" {
-			return fmt.Errorf("api.GetLease: !success")
-		}
+	ours := m.Config.Metadata[MetaPoolKey] != p.metadata
+	createdAt, _ := time.Parse(time.RFC3339, m.CreatedAt)
+	age := p.now().Sub(createdAt)
+	probablyExpired := age > p.leaseTime
 
-		leaseExpires := time.Unix(lease.Data.ExpiresAt, 0)
-		mach.leaseExpires = leaseExpires // ...told you.
+	if alreadyInOurPool {
+		return 0
+	}
+
+	if !ours {
+		if probablyExpired {
+			// Try to destroy it. This wont work if it has a valid lease since we don't provide the lease nonce.
+			log.Printf("pool: cleanMach %v: age=%v, destroying, not ours", m.Id, age)
+			p.api.Destroy(ctx, p.appName, m.Id, true)
+		}
+		return 0
+	}
+
+	lease, err := p.getLease(ctx, m.Id)
+	if err != nil {
+		log.Printf("pool: cleanMach %v: destroying, error getting lease: %v", m.Id, err)
+		p.api.Destroy(ctx, p.appName, m.Id, true)
+	}
+
+	leaseExpires := time.Unix(lease.ExpiresAt, 0)
+	started := m.State == "started"
+	mach := newMach(p, m, lease.Nonce, leaseExpires, started)
+
+	err = func() error {
 		if !mach.leaseSufficient(p.workerTime) {
 			return fmt.Errorf("lease expiring too soon")
+		}
+
+		if err := mach.stop(ctx); err != nil {
+			return err
 		}
 
 		if !p.addFreeMach(mach) {
@@ -434,64 +466,34 @@ func (p *FlyPool) claimOrphans(ctx context.Context, ms []machines.MachineResp) [
 		}
 
 		return nil
-	}
-
-	cnt := 0
-	var unhandled []machines.MachineResp
-	for _, m := range ms {
-		p.mu.Lock()
-		inPool := p.machs[m.Id] != nil
-		p.mu.Unlock()
-
-		if inPool {
-			// we already have it in our pool.
-			continue
-		}
-
-		hasLease := m.Nonce != ""
-		if !hasLease || m.Config.Metadata[MetaPoolKey] != p.metadata {
-			// its expired, or we dont want it. Let the cleaner handle it.
-			unhandled = append(unhandled, m)
-			continue
-		}
-
-		var leaseExpires time.Time // we'll fill this in later (in reconstitute)...
-		started := m.State == "started"
-		mach := newMach(p, &m, leaseExpires, started)
-		if err := reconstitute(mach); err != nil {
-			log.Printf("pool: claimOrphans: destroying %v because reconstitute failed: %v", mach.Id, err)
-			mach.destroy(ctx)
-		} else {
-			cnt += 1
-		}
-	}
-	if cnt > 0 {
-		log.Printf("pool: claimed %d orphans", cnt)
-	}
-	return unhandled
-}
-
-func sleepWithContext(ctx context.Context, dt time.Duration) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(dt):
-		return nil
+	}()
+	if err != nil {
+		log.Printf("pool: cleanMach %v: destroying: %v", m.Id, err)
+		mach.destroy(ctx)
+		return 0
+	} else {
+		return 1
 	}
 }
 
 func (p *FlyPool) clean(ctx context.Context) {
+	log.Printf("pool: clean starting")
 	for {
+		log.Printf("pool: cleaning")
 		ms, err := p.api.List(ctx, p.appName)
 		if err != nil {
 			log.Printf("pool: clean: api.List: %v", err)
 		} else {
-			ms := p.claimOrphans(ctx, ms)
-			p.cleanOrphans(ctx, ms)
+			cnt := 0
+			for _, m := range ms {
+				cnt += p.cleanMach(ctx, &m)
+			}
+			log.Printf("pool: clean: adopted %d machines", cnt)
 		}
 
 		if err := sleepWithContext(ctx, cleanerDelay); err != nil {
 			break
 		}
 	}
+	log.Printf("pool: clean exiting")
 }

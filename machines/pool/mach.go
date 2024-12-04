@@ -33,7 +33,7 @@ type Mach struct {
 	started      bool
 }
 
-func newMach(p *FlyPool, flym *machines.MachineResp, leaseExpires time.Time, started bool) *Mach {
+func newMach(p *FlyPool, flym *machines.MachineResp, leaseNonce string, leaseExpires time.Time, started bool) *Mach {
 	m := &Mach{
 		Url:        fmt.Sprintf("http://[%s]:%d", flym.PrivateIp, p.machPort),
 		Id:         flym.Id,
@@ -41,7 +41,7 @@ func newMach(p *FlyPool, flym *machines.MachineResp, leaseExpires time.Time, sta
 
 		pool:         p,
 		leaseExpires: leaseExpires,
-		leaseNonce:   flym.Nonce,
+		leaseNonce:   leaseNonce,
 		started:      started,
 	}
 	m.Free = func() { p.freeMach(m) }
