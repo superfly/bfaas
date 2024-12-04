@@ -52,6 +52,10 @@ func (p *MockPool) Close() error {
 	return nil
 }
 
+func (p *MockPool) Destroy() error {
+	return p.Close()
+}
+
 func (p *MockPool) Alloc(ctx context.Context) (*Mach, error) {
 	log.Printf("mock pool: alloc wait")
 	var mach *Mach
