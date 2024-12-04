@@ -19,7 +19,7 @@ type LeaseResp struct {
 
 type LeaseData struct {
 	Nonce     string `json:"nonce"`
-	ExpiresAt int    `json:"expires_at"`
+	ExpiresAt int64  `json:"expires_at"`
 	Owner     string `json:"owner"`
 	Descr     string `json:"description"`
 	Version   string `json:"version"`

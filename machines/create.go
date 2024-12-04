@@ -15,11 +15,12 @@ type CreateMachineReq struct {
 }
 
 type MachineConfig struct {
-	Init        Init    `json:"init"`
-	Image       string  `json:"image"`
-	AutoDestroy bool    `json:"auto_destroy"`
-	Restart     Restart `json:"restart"`
-	Guest       Guest   `json:"guest"`
+	Init        Init              `json:"init"`
+	Metadata    map[string]string `json:"metadata"`
+	Image       string            `json:"image"`
+	AutoDestroy bool              `json:"auto_destroy"`
+	Restart     Restart           `json:"restart"`
+	Guest       Guest             `json:"guest"`
 }
 
 type Init struct {
@@ -44,7 +45,8 @@ type MachineResp struct {
 	// ImageRef
 	InstanceId string `json:"instance_id"`
 	PrivateIp  string `json:"private_ip"`
-	// CreatedAt, UpdatedAt
+	CreatedAt  string `json:"created_at"`
+	// UpdatedAt
 	Config MachineConfig `json:"config"`
 	// Events
 

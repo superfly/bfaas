@@ -33,9 +33,9 @@ var createReq = &machines.CreateMachineReq{
 
 func getTestApi(t *testing.T) (appName string, api *machines.Api) {
 	appName = os.Getenv("APPNAME")
-	token := os.Getenv("FLY_API_TOKEN")
+	token := os.Getenv("FLY_API_TOKEN_WORKER")
 	if appName == "" || token == "" {
-		t.Skip("requires env: APPNAME, FLY_API_TOKEN")
+		t.Skip("requires env: APPNAME, FLY_API_TOKEN_WORKER")
 	}
 
 	internal := os.Getenv("FLY_PUBLIC_IP") != ""

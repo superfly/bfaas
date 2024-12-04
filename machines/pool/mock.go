@@ -9,6 +9,7 @@ import (
 )
 
 const mockMachId = "m8001"
+const mockInstanceId = "INSTANCEID"
 const mockUrl = "http://localhost:8001"
 
 // MockPool is a mock pool of machines of size 1.
@@ -33,10 +34,11 @@ func NewMock(cmd string, arg ...string) *MockPool {
 
 	// Add one mach to the pool.
 	mach := &Mach{
-		Url:  mockUrl,
-		Id:   mockMachId,
-		pool: p,
+		Url:        mockUrl,
+		Id:         mockMachId,
+		InstanceId: mockInstanceId,
 	}
+	mach.Free = func() { p.freeMach(mach) }
 	p.mach = mach
 	p.free <- mach
 
@@ -80,7 +82,7 @@ func (p *MockPool) Alloc(ctx context.Context) (*Mach, error) {
 	return mach, nil
 }
 
-func (p *MockPool) Free(mach *Mach) {
+func (p *MockPool) freeMach(mach *Mach) {
 	log.Printf("pool: free %s", mach.Id)
 	if p.cancel != nil {
 		p.cancel()
