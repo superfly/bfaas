@@ -66,6 +66,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	auth := s.signer(time.Now(), worker.Id)
 	workReq.Header.Set("Authorization", auth)
 	workReq.Header.Set("fly-force-instance-id", worker.Id)
+	workReq.URL.RawQuery = r.URL.RawQuery
 
 	log.Printf("making request for %v to %v", s.maxReqTime, url)
 	workResp, err := doWithRetry(workReq)

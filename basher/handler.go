@@ -43,6 +43,7 @@ func (s *Server) withOnce(next Handler) Handler {
 }
 
 func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
+	raw := r.URL.Query().Get("raw") != ""
 	w.Header().Set("Worker", os.Getenv("FLY_MACHINE_ID"))
 
 	bs, err := io.ReadAll(r.Body)
@@ -78,12 +79,15 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 			if err != nil || n == 0 {
 				break
 			}
-
 			s := string(buf[:n])
-			bs, _ := json.Marshal(s)
 
 			mu.Lock()
-			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, string(bs))
+			if raw {
+				fmt.Fprintf(w, "%s", s)
+			} else {
+				bs, _ := json.Marshal(s)
+				fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, string(bs))
+			}
 			if canFlush {
 				flusher.Flush()
 			}
@@ -110,5 +114,9 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wg.Wait()
-	fmt.Fprintf(w, "event: exit\ndata: {\"code\":%d}\n\n", exitCode)
+	if raw {
+		fmt.Fprintf(w, "\nexit: %d\n", exitCode)
+	} else {
+		fmt.Fprintf(w, "event: exit\ndata: {\"code\":%d}\n\n", exitCode)
+	}
 }
