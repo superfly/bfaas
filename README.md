@@ -7,8 +7,34 @@ A coordinator that runs unsafe code in a work machine with strict time limits.
 No network policy is set on basher worker machines at the moment.
 This means that workers have access to the org's 6pn and can talk to other fly apps.
 
-I turned off auto-start/auto-stop because when coord was being stopped it wasnt
-cleaning up the worker pool.  Figure out why not and fix this.
+# Design
+
+The `basher` program is installed in its own org as the `tim-basher` app. It accepts requests,
+authenticates them, and runs untrusted bash commands. Aside from auth, it is a normal run of the
+mill web server.
+
+The `coord` program is installed in another org (here in my `personal` org). It is a web server
+that accepts unauthenticated requests, allocates a `tim-basher` worker from a machine pool, and
+proxies requests to it, and frees the machine (stoppinig it down and returning it to the pool).
+It enforces a lifetime on all proxied requests, and cancels the request and shuts it down if
+the request outlives its life. When proxying requests, it adds an authentication header that
+is good for a limited time on a single worker machine.
+
+The bulk of the design and implementation is in the `machines/pool` library, which manages
+a pool of worker machines. It creates machines on-demand, up to the pool size. Machines are
+created with a lease and machine metadata that marks which pool owns the machine, allowing
+multiple pools running on different coordinator machines to allocate and manage workers
+without interference. After a machine is allocated, used, and freed, it is stopped but not
+destroyed. The pool will keep re-using these machines until their leases have expired.
+
+Pools periodically perform cleaning, which destroy worker machines after their leases have
+expired, both for machines owned by the pool and machines owned by other pool instances.
+When a pool coordinator is stopped, it does not destroy its workers, and when restarted, can
+reclaim any workers that were created by an earlier instance of the same machine.
+The pool can be destroyed instead of stopped, which causes it to destroy any worker machines it owns.
+If a pool machine is stopped without performing its cleanup tasks, another worker will clean up any of its
+orphaned machines after their leases have expired.
+
 
 # What's here
 
