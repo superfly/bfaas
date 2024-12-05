@@ -41,10 +41,13 @@ PUBLIC=xxx
 PRIVATE=xxx
   ... capture PUBLIC=xxx PRIVATE=xxx ...
 
-# Make tim-basher app as our worker app.
-% fly app create tim-basher -o personal
+# Make tim-basher app in its own org as our worker app,
+# with flycast reachable from the "personal" org.
+% fly orgs create tim-basher
+% fly app create tim-basher -o tim-basher
+% fly -a tim-basher ips allocate-v6 --private --org personal
 % fly -a tim-basher secrets set PUBLIC=$PUBLIC
-% fly deploy -c fly.toml.basher --update-only
+% fly deploy -c fly.toml.basher
    ... capture IMAGE=registry.fly.io/tim-basher:deployment-01JE4SH5NEC28JQ5JTTGTQM78Q
 
 # Make tim-coord app as our coordinator

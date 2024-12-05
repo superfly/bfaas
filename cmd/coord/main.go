@@ -62,6 +62,21 @@ func main() {
 				Cpus:     1,
 				MemoryMb: 256,
 			},
+			Services: []machines.Service{
+				machines.Service{
+					Protocol:     "tcp",
+					InternalPort: 8001,
+					Autostop:     false,
+					Autostart:    false,
+					Ports: []machines.Port{
+						machines.Port{
+							Port:       80,
+							Handlers:   []string{"http"},
+							ForceHTTPS: false,
+						},
+					},
+				},
+			},
 		}
 		createReq := &machines.CreateMachineReq{
 			Config: machConfig,

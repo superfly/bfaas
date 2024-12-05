@@ -35,7 +35,7 @@ type Mach struct {
 
 func newMach(p *FlyPool, flym *machines.MachineResp, leaseNonce string, leaseExpires time.Time, started bool) *Mach {
 	m := &Mach{
-		Url:        fmt.Sprintf("http://[%s]:%d", flym.PrivateIp, p.machPort),
+		Url:        fmt.Sprintf("http://%s.flycast", p.appName),
 		Id:         flym.Id,
 		InstanceId: flym.InstanceId,
 

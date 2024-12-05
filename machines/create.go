@@ -17,6 +17,7 @@ type CreateMachineReq struct {
 type MachineConfig struct {
 	Init        Init              `json:"init"`
 	Metadata    map[string]string `json:"metadata"`
+	Services    []Service         `json:"services"`
 	Image       string            `json:"image"`
 	AutoDestroy bool              `json:"auto_destroy"`
 	Restart     Restart           `json:"restart"`
@@ -25,6 +26,25 @@ type MachineConfig struct {
 
 type Init struct {
 	Exec []string `json:"exec"`
+}
+
+type Service struct {
+	Protocol     string `json:"protocol"`
+	InternalPort int    `json:"internal_port"`
+	//Autostop           string `json:"autostop"` // off/stop/suspend
+	Autostop           bool   `json:"autostop"` // TODO: support string or off/stop/suspend
+	Autostart          bool   `json:"autostart"`
+	MinMachinesRunning int    `json:"min_machines_running"`
+	Ports              []Port `json:"ports,omitempty"`
+	// todo: checks, concurrency, force_instance_key, force_instance_description
+}
+
+type Port struct {
+	Port int `json:"port,omitempty" toml:"port,omitempty"`
+	// todo: start_port, end_port,
+	Handlers   []string `json:"handlers,omitempty" toml:"handlers,omitempty"`
+	ForceHTTPS bool     `json:"force_https,omitempty" toml:"force_https,omitempty"`
+	// todo: tls_options, http_options, proxy_proto_options
 }
 
 type Restart struct {

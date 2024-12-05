@@ -19,6 +19,7 @@ var retryDelay = 20 * time.Millisecond
 
 // doWithRetry will retry a request several times if the connection is refused,
 // giving the worker machine some time to start up its http server.
+// Since requests go through fly proxy, we treat ECONNRESET similarly to ECONNREFUSED.
 func doWithRetry(req *http.Request) (resp *http.Response, err error) {
 	// We need the body multiple times, read it into memory.
 	body, err := io.ReadAll(req.Body)
@@ -37,7 +38,7 @@ func doWithRetry(req *http.Request) (resp *http.Response, err error) {
 
 		req.Body = io.NopCloser(bytes.NewBuffer(body))
 		resp, err = client.Do(req)
-		if err == nil || !errors.Is(err, syscall.ECONNREFUSED) {
+		if err == nil || !(errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET)) {
 			return
 		}
 	}
@@ -64,7 +65,9 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 
 	auth := s.signer(time.Now(), worker.Id)
 	workReq.Header.Set("Authorization", auth)
-	log.Printf("making request for %v", s.maxReqTime)
+	workReq.Header.Set("fly-force-instance-id", worker.Id)
+
+	log.Printf("making request for %v to %v", s.maxReqTime, url)
 	workResp, err := doWithRetry(workReq)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
