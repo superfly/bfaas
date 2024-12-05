@@ -47,7 +47,7 @@ PRIVATE=xxx
 % fly app create tim-basher -o tim-basher
 % fly -a tim-basher ips allocate-v6 --private --org personal
 % fly -a tim-basher secrets set PUBLIC=$PUBLIC
-% fly deploy -c fly.toml.basher
+% fly deploy -c fly.toml.basher --update-only
    ... capture IMAGE=registry.fly.io/tim-basher:deployment-01JE4SH5NEC28JQ5JTTGTQM78Q
 
 # Make tim-coord app as our coordinator
