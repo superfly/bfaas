@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -42,6 +43,8 @@ func (s *Server) withOnce(next Handler) Handler {
 }
 
 func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Worker", os.Getenv("FLY_MACHINE_ID"))
+
 	bs, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)

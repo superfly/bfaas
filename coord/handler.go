@@ -78,6 +78,9 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	for k, v := range workResp.Header {
+		w.Header()[k] = v
+	}
 	w.WriteHeader(workResp.StatusCode)
 	io.Copy(w, workResp.Body)
 	workResp.Body.Close()
