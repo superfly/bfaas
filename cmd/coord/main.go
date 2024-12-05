@@ -52,42 +52,11 @@ func main() {
 		p = pool.NewMock("go", "run", "cmd/basher/main.go")
 	} else {
 		log.Printf("using fly pool")
-		machConfig := machines.MachineConfig{
-			Image: workerImage,
-			Restart: machines.Restart{
-				Policy: "no",
-			},
-			Guest: machines.Guest{
-				CpuKind:  "shared",
-				Cpus:     1,
-				MemoryMb: 256,
-			},
-			Services: []machines.Service{
-				machines.Service{
-					Protocol:     "tcp",
-					InternalPort: 8001,
-					Autostop:     false,
-					Autostart:    false,
-					Ports: []machines.Port{
-						machines.Port{
-							Port:       80,
-							Handlers:   []string{"http"},
-							ForceHTTPS: false,
-						},
-					},
-				},
-			},
-		}
-		createReq := &machines.CreateMachineReq{
-			Config: machConfig,
-			Region: region, // same region as coord.
-		}
-
 		api := machines.NewInternal(flyAuth)
 		var err error
-		p, err = pool.New(api, machId, workerApp, createReq,
-			pool.Size(2), pool.WorkerTime(2*maxReqTime),
-			pool.LeaseTime(5*time.Minute))
+		p, err = pool.New(api, machId, workerApp, workerImage,
+			pool.Size(5), pool.Port(8001), pool.Region(region),
+			pool.WorkerTime(2*maxReqTime), pool.LeaseTime(5*time.Minute))
 		if err != nil {
 			log.Fatalf("pool.New: %v", err)
 		}

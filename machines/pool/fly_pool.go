@@ -16,6 +16,11 @@ const MetaPoolKey = "pool_id"
 
 var cleanerDelay = 5 * time.Minute
 var ErrPoolClosed = fmt.Errorf("The Pool Is Closed")
+var defaultGuest = machines.Guest{
+	CpuKind:  "shared",
+	Cpus:     1,
+	MemoryMb: 256,
+}
 
 // checkOk transforms (ok, err) into err.
 func checkOk(ok bool, err error) error {
@@ -36,14 +41,17 @@ func sleepWithContext(ctx context.Context, dt time.Duration) error {
 
 // FlyPool is a pool of Fly machines.
 type FlyPool struct {
-	api      *machines.Api
-	name     string
-	capacity int
+	api        *machines.Api
+	name       string
+	capacity   int
+	leaseTime  time.Duration
+	workerTime time.Duration
 
 	appName    string
-	createReq  *machines.CreateMachineReq
-	workerTime time.Duration
-	leaseTime  time.Duration
+	machImage  string
+	machPort   int
+	machGuest  *machines.Guest
+	machRegion string
 
 	now func() time.Time // TODO: for mocking. do we really need this?
 
@@ -82,24 +90,38 @@ func LeaseTime(d time.Duration) Opt {
 	return func(p *FlyPool) { p.leaseTime = d }
 }
 
+func Port(port int) Opt {
+	return func(p *FlyPool) { p.machPort = port }
+}
+
+func Guest(guest *machines.Guest) Opt {
+	return func(p *FlyPool) { p.machGuest = guest }
+}
+
+func Region(region string) Opt {
+	return func(p *FlyPool) { p.machRegion = region }
+}
+
 // New creates a new machine pool of up to capacity machines owned by this pool.
 // Name should be a unique name for the pool, such as the pool machine name.
-func New(api *machines.Api, poolName string, appName string, createReq *machines.CreateMachineReq, opts ...Opt) (*FlyPool, error) {
-	metadata := fmt.Sprintf("%v//%v", poolName, createReq.Config.Image)
+func New(api *machines.Api, poolName, appName, image string, opts ...Opt) (*FlyPool, error) {
+	metadata := fmt.Sprintf("%v//%v", poolName, image)
 	p := &FlyPool{
-		name:      poolName,
-		capacity:  2,
-		size:      0,
-		leaseTime: 30 * time.Minute,
-
-		appName:    appName,
-		createReq:  createReq,
+		name:       poolName,
+		capacity:   2,
+		size:       0,
+		leaseTime:  30 * time.Minute,
 		workerTime: time.Minute,
+
+		appName:   appName,
+		machImage: image,
+		machPort:  8000,
+		machGuest: &defaultGuest,
 
 		now: time.Now,
 
-		api:       api,
-		metadata:  metadata,
+		api:      api,
+		metadata: metadata,
 
 		machs: make(map[string]*Mach),
 	}
@@ -110,7 +132,7 @@ func New(api *machines.Api, poolName string, appName string, createReq *machines
 
 	// construct after p.capacity might be set by options.
 	p.free = make(chan *Mach, p.capacity)
-	p.discards = make(chan *Mach, p.capacity) // TODO: think about sizing. reclaiming existing machines might produce more than capacity
+	p.discards = make(chan *Mach, p.capacity)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	p.cancel = cancel
@@ -213,15 +235,38 @@ func (p *FlyPool) addFreeMach(mach *Mach) bool {
 
 // createMach creates a new machine.
 func (p *FlyPool) createMach(ctx context.Context, start bool) (*Mach, error) {
-	req := *p.createReq
-	req.SkipLaunch = !start
-	req.Name = fmt.Sprintf("worker-%s-%d", p.name, rand.Uint64())
 	expire := p.now().Add(p.leaseTime)
-	req.LeaseTTL = int(p.leaseTime.Seconds())
-	if req.Config.Metadata == nil {
-		req.Config.Metadata = make(map[string]string)
+	req := machines.CreateMachineReq{
+		Name:       fmt.Sprintf("worker-%s-%d", p.name, rand.Uint64()),
+		LeaseTTL:   int(p.leaseTime.Seconds()),
+		SkipLaunch: !start,
+		Region:     p.machRegion,
+		Config: machines.MachineConfig{
+			Image: p.machImage,
+			Guest: *p.machGuest,
+			Restart: machines.Restart{
+				Policy: "no",
+			},
+			Metadata: map[string]string{
+				MetaPoolKey: p.metadata,
+			},
+			Services: []machines.Service{
+				machines.Service{
+					Protocol:     "tcp",
+					InternalPort: p.machPort,
+					Autostop:     false,
+					Autostart:    false,
+					Ports: []machines.Port{
+						machines.Port{
+							Port:       80,
+							Handlers:   []string{"http"},
+							ForceHTTPS: false,
+						},
+					},
+				},
+			},
+		},
 	}
-	req.Config.Metadata[MetaPoolKey] = p.metadata // XXX TODO: metadata is untrusted!
 
 	log.Printf("pool: create %s %s", p.appName, req.Name)
 	flym, err := p.api.Create(ctx, p.appName, &req)

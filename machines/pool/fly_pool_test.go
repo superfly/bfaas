@@ -12,31 +12,12 @@ import (
 	"github.com/superfly/coordBfaas/machines"
 )
 
-var machConfig = machines.MachineConfig{
-	Init: machines.Init{
-		Exec: []string{"/bin/sleep", "inf"},
-	},
-	Image: "registry-1.docker.io/library/ubuntu:latest",
-	Restart: machines.Restart{
-		Policy: "no",
-	},
-	Guest: machines.Guest{
-		CpuKind:  "shared",
-		Cpus:     1,
-		MemoryMb: 256,
-	},
-}
-
-var createReq = &machines.CreateMachineReq{
-	Config: machConfig,
-	Region: "qmx",
-}
-
-func getTestApi(t *testing.T) (appName string, api *machines.Api) {
+func getTestApi(t *testing.T) (appName, image string, api *machines.Api) {
+	image = os.Getenv("IMAGE")
 	appName = os.Getenv("APPNAME")
 	token := os.Getenv("FLY_API_TOKEN_WORKER")
-	if appName == "" || token == "" {
-		t.Skip("requires env: APPNAME, FLY_API_TOKEN_WORKER")
+	if appName == "" || token == "" || image == "" {
+		t.Skip("requires env: APPNAME, FLY_API_TOKEN_WORKER, IMAGE")
 	}
 
 	internal := os.Getenv("FLY_PUBLIC_IP") != ""
@@ -50,9 +31,9 @@ func getTestApi(t *testing.T) (appName string, api *machines.Api) {
 
 func TestPool(t *testing.T) {
 	poolName := "TestPool"
-	appName, api := getTestApi(t)
+	appName, image, api := getTestApi(t)
 	log.Printf("create pool")
-	pool, err := New(api, poolName, appName, createReq, Size(2), WorkerTime(time.Minute), LeaseTime(5*time.Minute))
+	pool, err := New(api, poolName, appName, image, Size(2), WorkerTime(time.Minute), LeaseTime(5*time.Minute), Region("qmx"), Port(8001))
 	assert.NoError(t, err)
 
 	ctx := context.Background()
@@ -73,7 +54,7 @@ func TestPool(t *testing.T) {
 	assert.NoError(t, err)
 
 	log.Printf("recreate pool")
-	pool, err = New(api, poolName, appName, createReq, Size(2), WorkerTime(time.Minute), LeaseTime(5*time.Minute))
+	pool, err = New(api, poolName, appName, image, Size(2), WorkerTime(time.Minute), LeaseTime(5*time.Minute), Region("qmx"), Port(8001))
 	assert.NoError(t, err)
 
 	m, err = pool.Alloc(ctx)
