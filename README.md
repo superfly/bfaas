@@ -35,6 +35,19 @@ The pool can be destroyed instead of stopped, which causes it to destroy any wor
 If a pool machine is stopped without performing its cleanup tasks, another worker will clean up any of its
 orphaned machines after their leases have expired.
 
+## Untrusted metadata
+
+There is a subtle, but relatively weak, security flaw in this design. Untrusted worker machines
+have access to the `/.fly/api` which allows them to read and alter their own metadata.
+An untrusted machine can tamper with the metadata that marks which worker owns the machine.
+If a pool is destroyed before it can cleanup its workers and is restarted, the new instance
+of the pool will not recognize that it owned the worker machine, and wont stop or destroy
+it until its lease has expired. This could allow an untrusted worker to outlive its intended
+lifetime up until its lease has expired. This can only happen if the pool was terminated before
+stopping the untrusted worker, which should not normally happen. A similar scenario would also
+happen without tampering with the metadata if the pool was destroyed without cleaning up, and
+was never restarted.
+
 
 # What's here
 
