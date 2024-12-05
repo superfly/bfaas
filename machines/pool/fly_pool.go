@@ -42,7 +42,6 @@ type FlyPool struct {
 
 	appName    string
 	createReq  *machines.CreateMachineReq
-	machPort   int
 	createCtx  context.Context
 	workerTime time.Duration
 	leaseTime  time.Duration
@@ -80,10 +79,6 @@ func Size(capacity int) Opt {
 	return func(p *FlyPool) { p.capacity = capacity }
 }
 
-func Port(port int) Opt {
-	return func(p *FlyPool) { p.machPort = port }
-}
-
 func WorkerTime(d time.Duration) Opt {
 	return func(p *FlyPool) { p.workerTime = d }
 }
@@ -105,7 +100,6 @@ func New(api *machines.Api, poolName string, appName string, createReq *machines
 		appName:    appName,
 		createReq:  createReq,
 		workerTime: time.Minute,
-		machPort:   8000,
 
 		now: time.Now,
 
