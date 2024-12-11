@@ -10,7 +10,14 @@ RUN go build -v -o /basher ./cmd/basher/main.go
 FROM debian:bookworm
 
 # load up some goodies for people to play with
-RUN apt-get update && apt-get install -y iproute2 procps jq curl unzip git file bsdextrautils coreutils lsb-release
+RUN apt-get update && \
+    apt-get install -y iproute2 procps jq curl unzip git file bsdextrautils coreutils lsb-release \
+        dnsutils iputils-arping iputils-clockdiff iputils-ping iputils-tracepath tcptraceroute traceroute net-tools \
+		netcat-openbsd nmap ndiff masscan ncrack p0f pnscan fierce pads pnscan hping3 \
+        python3 python3-pip python3-nmap python3-scapy
+
+# TODO: metasploit.
+# TODO: trawl through pen testing docker images for package ideas.
 
 COPY --from=builder /basher /usr/local/bin/
 CMD ["/usr/local/bin/basher"]
