@@ -30,6 +30,11 @@ func New(pool pool.Pool, port int, privKey string, maxReqTime time.Duration) (*S
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /run", server.handleRun)
+	mux.HandleFunc("GET /hdr", func(w http.ResponseWriter, r *http.Request) {
+		for k, v := range r.Header {
+			fmt.Fprintf(w, "hdr: %s=%s\n", k, v)
+		}
+	})
 
 	server.Server = &http.Server{
 		Addr:        fmt.Sprintf(":%d", port),

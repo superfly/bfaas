@@ -17,6 +17,27 @@ var client = &http.Client{}
 var retryTimes = 5
 var retryDelay = 20 * time.Millisecond
 
+func copyFlusher(w http.ResponseWriter, r io.Reader) (int, error) {
+	flusher, canFlush := w.(http.Flusher)
+	buf := make([]byte, 4096)
+	tot := 0
+	for {
+		n, err := r.Read(buf)
+		if err != nil || n == 0 {
+			return tot, err
+		}
+
+		n, err = w.Write(buf[:n])
+		tot += n
+		if err != nil {
+			return tot, err
+		}
+		if canFlush {
+			flusher.Flush()
+		}
+	}
+}
+
 // doWithRetry will retry a request several times if the connection is refused,
 // giving the worker machine some time to start up its http server.
 // Since requests go through fly proxy, we treat ECONNRESET similarly to ECONNREFUSED.
@@ -81,11 +102,12 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "make worker request failed", http.StatusInternalServerError)
 		return
 	}
+	defer workResp.Body.Close()
 
 	for k, v := range workResp.Header {
 		w.Header()[k] = v
 	}
 	w.WriteHeader(workResp.StatusCode)
-	io.Copy(w, workResp.Body)
+	copyFlusher(w, workResp.Body)
 	workResp.Body.Close()
 }
