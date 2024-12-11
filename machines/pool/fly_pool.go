@@ -63,6 +63,7 @@ type FlyPool struct {
 	isShutdown bool
 	cancel     context.CancelFunc
 	wg         sync.WaitGroup
+	freeWg     sync.WaitGroup
 
 	mu       sync.Mutex
 	size     int // note: size may be greater than len(machs) during machine creation.
@@ -159,6 +160,10 @@ func New(api *machines.Api, poolName, appName, image string, opts ...Opt) (*FlyP
 // See Close/Destory for cleanup
 func (p *FlyPool) shutdown() {
 	log.Printf("pool: shutdown")
+
+	// make sure bg freeMach threads are finished.
+	p.freeWg.Wait()
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -408,14 +413,21 @@ func (p *FlyPool) freeMach(mach *Mach) {
 		return
 	}
 
-	ctx := context.Background()
-	if err := mach.stop(ctx); err != nil {
-		log.Printf("pool free: stopMach: %v", err)
-		p.discardMach(mach, "stop machine failed")
-		return
-	}
+	// Don't make caller wait for the machine to stop,
+	p.freeWg.Add(1)
+	go func() {
+		defer p.freeWg.Done()
 
-	p.free <- mach
+		ctx := context.Background()
+		if err := mach.stop(ctx); err != nil {
+			log.Printf("pool free: stopMach: %v", err)
+			p.discardMach(mach, "stop machine failed")
+			return
+		}
+
+		p.free <- mach
+		log.Printf("pool free: stopMach done")
+	}()
 }
 
 // discardMach asynchronously destroys the machine or fails silently.
