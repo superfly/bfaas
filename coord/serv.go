@@ -27,7 +27,7 @@ func New(pool pool.Pool, port int, privKey string, maxReqTime time.Duration) (*S
 		pool:       pool,
 		signer:     signer,
 		maxReqTime: maxReqTime,
-		rlim:       newLimiter(1.0, 1, time.Minute),
+		rlim:       newLimiter(0.33, 1, time.Minute), // ~3 req/sec per ip src.
 	}
 
 	mux := http.NewServeMux()
