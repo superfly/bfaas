@@ -5,6 +5,7 @@ go 1.22.5
 require (
 	github.com/alecthomas/assert/v2 v2.11.0
 	golang.org/x/crypto v0.29.0
+	golang.org/x/time v0.8.0
 )
 
 require (
