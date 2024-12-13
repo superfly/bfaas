@@ -2,11 +2,6 @@
 
 A coordinator that runs unsafe code in a work machine with strict time limits.
 
-# TODO
-
-No network policy is set on basher worker machines at the moment.
-This means that workers have access to the org's 6pn and can talk to other fly apps.
-
 # Design
 
 The `basher` program is installed in its own org as the `tim-basher` app. It accepts requests,
@@ -81,21 +76,21 @@ PRIVATE=xxx
   ... capture PUBLIC=xxx PRIVATE=xxx ...
 
 # Make tim-basher app in its own org as our worker app,
-# with flycast reachable from the "personal" org.
-% fly orgs create tim-basher
-% fly app create tim-basher -o tim-basher
-% fly -a tim-basher ips allocate-v6 --private --org personal
+# with flycast reachable from the coordinator app.
+% fly orgs create bfaas
+% fly app create bfaas-worker -o bfaas
+% fly -a tim-basher ips allocate-v6 --private --org bfaas
 % fly -a tim-basher secrets set PUBLIC=$PUBLIC
-% fly deploy -c fly.toml.basher --update-only
-   ... capture IMAGE=registry.fly.io/tim-basher:deployment-01JE4SH5NEC28JQ5JTTGTQM78Q
+% fly deploy -c fly.toml.basher --update-only -a  -a bfaas-worker
+   ... capture IMAGE=registry.fly.io/bfaas-worker:deployment-01JF07KZF9JEC61S0AA895PW0F
 
 # Make tim-coord app as our coordinator
-% fly app create tim-coord -o personal
+% fly app create bfaas -o bfaas
 % fly secrets set PRIVATE=$PRIVATE
-% fly secrets set WORKER_APP=tim-basher
+% fly secrets set WORKER_APP=bfaas-worker
 % fly secrets set WORKER_IMAGE=$IMAGE
 % fly secrets set MAXREQTIME=10s
-% fly secrets set FLY_TOKEN="$(fly -a tim-basher tokens create deploy)"
+% fly secrets set FLY_TOKEN="$(fly -a bfaas-worker tokens create deploy)"
 % fly deploy
 
 # Try it out

@@ -3,10 +3,14 @@
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'tim-coord'
-primary_region = 'sjc'
+app = 'bfaas'
+primary_region = 'dfw'
 
-[build]
+[env]
+  MAXREQTIME = "10s"
+  WORKER_APP = "bfaas-worker"
+  WORKER_IMAGE = "registry.fly.io/bfaas-worker:deployment-01JF07KZF9JEC61S0AA895PW0F"
+
 
 [http_service]
   internal_port = 8000

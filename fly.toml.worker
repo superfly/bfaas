@@ -1,5 +1,5 @@
-app = 'tim-basher'
-primary_region = 'sjc'
+app = 'bfaas-worker'
+primary_region = 'dfw'
 
 [build]
   dockerfile = "Dockerfile.basher"
