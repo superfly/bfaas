@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"syscall"
 	"time"
 )
@@ -67,6 +68,8 @@ func doWithRetry(req *http.Request) (resp *http.Response, err error) {
 }
 
 func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Coord", os.Getenv("FLY_MACHINE_ID"))
+
 	worker, err := s.pool.Alloc(context.Background())
 	if err != nil {
 		log.Printf("pool.Alloc: %v", err)
@@ -103,6 +106,10 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer workResp.Body.Close()
+
+	if id := workResp.Header.Get("worker"); id != worker.Id {
+		log.Printf("warning: request went to %v not %v", id, worker.Id)
+	}
 
 	for k, v := range workResp.Header {
 		w.Header()[k] = v
