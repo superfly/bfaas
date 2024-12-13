@@ -14,7 +14,6 @@ type Server struct {
 	signer     auth.Signer
 	maxReqTime time.Duration
 	pool       pool.Pool
-	rlim       *Limiter
 }
 
 func New(pool pool.Pool, port int, privKey string, maxReqTime time.Duration) (*Server, error) {
@@ -27,7 +26,6 @@ func New(pool pool.Pool, port int, privKey string, maxReqTime time.Duration) (*S
 		pool:       pool,
 		signer:     signer,
 		maxReqTime: maxReqTime,
-		rlim:       newLimiter(0.33, 1, time.Minute), // ~3 req/sec per ip src.
 	}
 
 	mux := http.NewServeMux()
@@ -44,7 +42,7 @@ func New(pool pool.Pool, port int, privKey string, maxReqTime time.Duration) (*S
 		// Not setting write timeout, but we're managing request times.
 		//WriteTimeout:   maxReqTime,
 		MaxHeaderBytes: 4096,
-		Handler:        server.rlim.middleware(mux),
+		Handler:        mux,
 	}
 	return server, nil
 }
