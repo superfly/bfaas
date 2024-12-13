@@ -280,8 +280,12 @@ func (p *FlyPool) createMach(ctx context.Context, start bool) (*Mach, error) {
 	}
 
 	mach := newMach(p, flym, flym.Nonce, expire, start)
+	log.Printf("pool: create %s %s: success %v", p.appName, req.Name, mach.Id)
 	if start {
-		mach.waitFor(ctx, "started")
+		if err := mach.waitFor(ctx, "started"); err != nil {
+			p.discardMach(mach, "wait for start failed")
+			return nil, fmt.Errorf("api.Create %s: %w", p.appName, err)
+		}
 	}
 
 	return mach, nil
@@ -420,13 +424,13 @@ func (p *FlyPool) freeMach(mach *Mach) {
 
 		ctx := context.Background()
 		if err := mach.stop(ctx); err != nil {
-			log.Printf("pool free: stopMach: %v", err)
+			log.Printf("pool free: stopMach %v: %v", mach.Id, err)
 			p.discardMach(mach, "stop machine failed")
 			return
 		}
 
 		p.free <- mach
-		log.Printf("pool free: stopMach done")
+		log.Printf("pool free: stopMach %v: done", mach.Id)
 	}()
 }
 

@@ -54,6 +54,7 @@ func (mach *Mach) waitFor(ctx context.Context, state string) error {
 	ok, err := mach.pool.api.WaitFor(ctx, mach.pool.appName, mach.Id, mach.InstanceId, 10*time.Second, state, nonceOpt)
 	err = checkOk(ok, err)
 	if err != nil {
+		log.Printf("pool: wait for %s %s %s: %v", mach.pool.appName, mach.Id, state, err)
 		return fmt.Errorf("api.WaitFor %s %v: %w", mach.Id, state, err)
 	}
 	return nil

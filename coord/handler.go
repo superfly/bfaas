@@ -92,7 +92,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	workReq.Header.Set("fly-force-instance-id", worker.Id)
 	workReq.URL.RawQuery = r.URL.RawQuery
 
-	log.Printf("making request for %v to %v", s.maxReqTime, url)
+	log.Printf("making request for %v to %v worker %v", s.maxReqTime, url, worker.Id)
 	workResp, err := doWithRetry(workReq)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
