@@ -4,12 +4,12 @@ A coordinator that runs unsafe code in a work machine with strict time limits.
 
 # Design
 
-The `basher` program is installed in its own org as the `tim-basher` app. It accepts requests,
+The `basher` program is installed in its own org as the `bfaas-worker` app. It accepts requests,
 authenticates them, and runs untrusted bash commands. Aside from auth, it is a normal run of the
 mill web server.
 
 The `coord` program is installed in another org (here in my `personal` org). It is a web server
-that accepts unauthenticated requests, allocates a `tim-basher` worker from a machine pool, and
+that accepts unauthenticated requests, allocates a `bfaas-worker` worker from a machine pool, and
 proxies requests to it, and frees the machine (stoppinig it down and returning it to the pool).
 It enforces a lifetime on all proxied requests, and cancels the request and shuts it down if
 the request outlives its life. When proxying requests, it adds an authentication header that
@@ -75,16 +75,16 @@ PUBLIC=xxx
 PRIVATE=xxx
   ... capture PUBLIC=xxx PRIVATE=xxx ...
 
-# Make tim-basher app in its own org as our worker app,
+# Make bfaas-worker app in its own org as our worker app,
 # with flycast reachable from the coordinator app.
 % fly orgs create bfaas
 % fly app create bfaas-worker -o bfaas
-% fly -a tim-basher ips allocate-v6 --private --org bfaas
-% fly -a tim-basher secrets set PUBLIC=$PUBLIC
+% fly -a bfaas-worker ips allocate-v6 --private --org bfaas
+% fly -a bfaas-worker secrets set PUBLIC=$PUBLIC
 % fly deploy -c fly.toml.basher --update-only -a  -a bfaas-worker
    ... capture IMAGE=registry.fly.io/bfaas-worker:deployment-01JF07KZF9JEC61S0AA895PW0F
 
-# Make tim-coord app as our coordinator
+# Make bfaas app as our coordinator
 % fly app create bfaas -o bfaas
 % fly secrets set PRIVATE=$PRIVATE
 % fly secrets set WORKER_APP=bfaas-worker
@@ -94,13 +94,13 @@ PRIVATE=xxx
 % fly deploy
 
 # Try it out
-% curl -s -D- https://tim-coord.fly.dev/run -d uptime
+% curl -s -D- https://bfaas.fly.dev/run -d uptime
 ```
 
 To update the basher image
 ```
 % fly deploy -c fly.toml.basher --update-only
-   ... capture IMAGE=registry.fly.io/tim-basher:deployment-01JE4XPGN5KVRBE2Z1H0FWGDPA
+   ... capture IMAGE=registry.fly.io/bfaas-worker:deployment-01JE4XPGN5KVRBE2Z1H0FWGDPA
 % fly secrets set WORKER_IMAGE=$IMAGE
 ```
 
