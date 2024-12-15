@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/superfly/coordBfaas/japi"
 	"github.com/superfly/coordBfaas/machines"
 )
 
@@ -332,13 +333,17 @@ func (p *FlyPool) growPool(ctx context.Context) (*Mach, error) {
 		return nil, nil
 	}
 
-	mach, err := p.createMach(ctx, true)
+	mach, err := p.createMach(ctx, false)
 	if err != nil {
 		p.mu.Lock()
 		p.size -= 1 // we failed, roll back the size change.
 		p.mu.Unlock()
 
 		log.Printf("pool: growPool: createMach failed: %v", err)
+		return nil, err
+	}
+
+	if err := mach.waitFor(ctx, "stopped"); err != nil {
 		return nil, err
 	}
 
@@ -552,7 +557,7 @@ func (p *FlyPool) clean(ctx context.Context) {
 	log.Printf("pool: clean: starting")
 	for {
 		log.Printf("pool: cleaning")
-		ms, err := p.api.List(ctx, p.appName)
+		ms, err := p.api.List(ctx, p.appName, japi.ReqQuery("region", p.machRegion))
 		if err != nil {
 			log.Printf("pool: clean: api.List: %v", err)
 		} else {
