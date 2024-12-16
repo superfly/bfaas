@@ -37,13 +37,13 @@ func TestPool(t *testing.T) {
 	assert.NoError(t, err)
 
 	ctx := context.Background()
-	m, err := pool.Alloc(ctx)
+	m, err := pool.Alloc(ctx, true)
 	assert.NoError(t, err)
 	log.Printf("allocated %+v", m)
 
 	m.Free()
 
-	m, err = pool.Alloc(ctx)
+	m, err = pool.Alloc(ctx, true)
 	assert.NoError(t, err)
 	log.Printf("allocated %+v", m)
 
@@ -57,7 +57,7 @@ func TestPool(t *testing.T) {
 	pool, err = New(api, poolName, appName, image, Size(2), WorkerTime(time.Minute), LeaseTime(5*time.Minute), Region("qmx"), Port(8001))
 	assert.NoError(t, err)
 
-	m, err = pool.Alloc(ctx)
+	m, err = pool.Alloc(ctx, true)
 	assert.NoError(t, err)
 	log.Printf("allocated %+v", m)
 

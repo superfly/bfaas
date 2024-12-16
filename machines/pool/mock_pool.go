@@ -56,7 +56,7 @@ func (p *MockPool) Destroy() error {
 	return p.Close()
 }
 
-func (p *MockPool) Alloc(ctx context.Context) (*Mach, error) {
+func (p *MockPool) Alloc(ctx context.Context, waitForMachine bool) (*Mach, error) {
 	log.Printf("mock pool: alloc wait")
 	var mach *Mach
 	select {

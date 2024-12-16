@@ -358,7 +358,7 @@ func (p *FlyPool) growPool(ctx context.Context) (*Mach, error) {
 // discarding any machines that do not have enough lease time left.
 // It grows the pool automatically if there are no free machines immediately
 // available and the pool is not yet at capacity.
-func (p *FlyPool) allocLeased(ctx context.Context) (*Mach, error) {
+func (p *FlyPool) allocLeased(ctx context.Context, waitForFree bool) (*Mach, error) {
 	var err error
 	for {
 		mach, err := func() (*Mach, error) {
@@ -370,18 +370,23 @@ func (p *FlyPool) allocLeased(ctx context.Context) (*Mach, error) {
 
 			log.Printf("pool: alloc: grow pool xxx")
 			mach, err = p.growPool(ctx)
-			if err != nil {
+			if err != nil || mach == nil {
 				return nil, err
 			}
-			if mach != nil {
-				return mach, nil
+
+			if waitForFree {
+				log.Printf("pool: alloc: wait for free xxx")
+				return p.waitForFree(ctx)
 			}
 
-			log.Printf("pool: alloc: wait for free xxx")
-			return p.waitForFree(ctx)
+			return nil, nil
 		}()
 		if err != nil {
 			return nil, err
+		}
+
+		if mach == nil {
+			return nil, nil
 		}
 
 		if mach.leaseSufficient(p.workerTime) {
@@ -394,9 +399,9 @@ func (p *FlyPool) allocLeased(ctx context.Context) (*Mach, error) {
 }
 
 // Alloc returns the next free machine, blocking if necessary.
-func (p *FlyPool) Alloc(ctx context.Context) (*Mach, error) {
-	mach, err := p.allocLeased(ctx)
-	if err != nil {
+func (p *FlyPool) Alloc(ctx context.Context, waitForFree bool) (*Mach, error) {
+	mach, err := p.allocLeased(ctx, waitForFree)
+	if err != nil || mach == nil {
 		return nil, err
 	}
 

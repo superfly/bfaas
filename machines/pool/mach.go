@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/superfly/coordBfaas/japi"
 	"github.com/superfly/coordBfaas/machines"
 )
 
@@ -86,7 +87,9 @@ func (mach *Mach) stop(ctx context.Context) error {
 	log.Printf("pool: stop %s %s", mach.pool.appName, mach.Id)
 	mach.started = false
 	nonceOpt := machines.LeaseNonce(mach.leaseNonce)
-	_, err := mach.pool.api.Stop(ctx, mach.pool.appName, mach.Id, nonceOpt)
+	_, err := mach.pool.api.Stop(ctx, mach.pool.appName, mach.Id, nonceOpt, japi.ReqBody(map[string]string{
+		"timeout": "1",
+	}))
 	if err != nil {
 		return fmt.Errorf("api.Stop %s: %w", mach.Id, err)
 	}

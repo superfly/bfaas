@@ -8,6 +8,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
+	"strconv"
 	"syscall"
 	"time"
 )
@@ -67,12 +69,46 @@ func doWithRetry(req *http.Request) (resp *http.Response, err error) {
 }
 
 func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
-	worker, err := s.pool.Alloc(context.Background())
+	replayMeta := r.Header.Get("fly-replay-src")
+	retriesRemaining := 1
+
+	// meta has the retries
+	if replayMeta != "" {
+		log.Printf("replay meta: %v", replayMeta)
+		matches := regexp.MustCompile(`state=retries-(-?\d+)$`).FindStringSubmatch(replayMeta)
+		if matches != nil {
+			r, err := strconv.Atoi(matches[0])
+			if err != nil {
+				retriesRemaining = r
+			}
+		}
+	}
+	waitForMachine := retriesRemaining <= 0
+	worker, err := s.pool.Alloc(context.Background(), waitForMachine)
 	if err != nil {
 		log.Printf("pool.Alloc: %v", err)
 		http.Error(w, "create worker failed", http.StatusInternalServerError)
 		return
 	}
+
+	if worker == nil && retriesRemaining <= 0 {
+		log.Printf("no worker available, out of retries")
+		http.Error(w, "no worker available", http.StatusServiceUnavailable)
+		return
+	}
+	if worker == nil {
+		retriesRemaining = retriesRemaining - 1
+		// gotta replay
+		log.Printf("no worker available, fly-replay")
+		//w.Header().Set("fly-replay", "elsewhere=true")
+
+		//w.Header().Set("fly-replay", fmt.Sprintf("elsewhere=true;state=%d", retriesRemaining))
+		w.Header().Set("fly-replay", fmt.Sprintf("elsewhere=true;state=retries-%d", retriesRemaining))
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte("no worker available\n"))
+		return
+	}
+
 	defer worker.Free()
 
 	ctx, _ := context.WithTimeout(r.Context(), s.maxReqTime)

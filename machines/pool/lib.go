@@ -19,5 +19,5 @@ type Pool interface {
 	// to alloc that is waiting for a free machine.
 	// It is an error to call Free after the pool has been closed, and
 	// could result in a panic.
-	Alloc(ctx context.Context) (*Mach, error)
+	Alloc(ctx context.Context, waitForFree bool) (*Mach, error)
 }
