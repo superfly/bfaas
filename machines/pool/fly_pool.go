@@ -6,12 +6,8 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"slices"
-	"strings"
 	"sync"
 	"time"
-
-	"github.com/samber/lo"
 
 	"github.com/superfly/coordBfaas/machines"
 	"github.com/superfly/coordBfaas/stats"
@@ -293,7 +289,7 @@ func (p *FlyPool) createMach(ctx context.Context, mach *Mach) error {
 	mach.InstanceId = flym.InstanceId
 	mach.leaseNonce = flym.Nonce
 
-	log.Printf("pool: create %s %s: success %v", p.appName, req.Name, mach.Id)
+	//log.Printf("pool: create %s %s: success %v", p.appName, req.Name, mach.Id)
 	if err := mach.waitFor(ctx, "started"); err != nil {
 		return fmt.Errorf("api.Create %s: %w", p.appName, err)
 	}
@@ -371,13 +367,11 @@ func (p *FlyPool) allocLeased(ctx context.Context) (*Mach, error) {
 	var err error
 	for {
 		mach, err := func() (*Mach, error) {
-			log.Printf("pool: alloc: get free immediately xxx")
 			mach := p.getFreeImmediately()
 			if mach != nil {
 				return mach, nil
 			}
 
-			log.Printf("pool: alloc: grow pool xxx")
 			mach, err = p.growPool(ctx)
 			if err != nil {
 				return nil, err
@@ -386,7 +380,6 @@ func (p *FlyPool) allocLeased(ctx context.Context) (*Mach, error) {
 				return mach, nil
 			}
 
-			log.Printf("pool: alloc: wait for free xxx")
 			return p.waitForFree(ctx)
 		}()
 		if err != nil {
@@ -454,7 +447,7 @@ func (p *FlyPool) freeMach(mach *Mach) {
 			return
 		}
 
-		log.Printf("pool free: stopMach %v %v: done", mach.Name, mach.Id)
+		//log.Printf("pool free: stopMach %v %v: done", mach.Name, mach.Id)
 		p.free <- mach
 	}()
 }
@@ -582,10 +575,8 @@ func (p *FlyPool) cleanMach(ctx context.Context, m *machines.MachineResp) int {
 }
 
 func (p *FlyPool) showStats() {
-	keys := lo.Keys(p.stats)
-	slices.SortFunc(keys, strings.Compare)
-	for _, k := range keys {
-		log.Printf("pool: stats: %s: %+v", k, p.stats[k].Stats())
+	for k, stat := range p.stats {
+		log.Printf("pool: stats: %s: %+v", k, stat.Stats())
 	}
 }
 

@@ -87,7 +87,7 @@ func (mach *Mach) waitFor(ctx context.Context, state string) error {
 		log.Printf("pool: wait for %s %s %s %s: %v", mach.pool.appName, mach.Name, mach.Id, state, err)
 		return fmt.Errorf("api.WaitFor %s %s %v: %w", mach.Name, mach.Id, state, err)
 	}
-	log.Printf("pool: wait for %s %s %s %s: done", mach.pool.appName, mach.Name, mach.Id, state)
+	//log.Printf("pool: wait for %s %s %s %s: done", mach.pool.appName, mach.Name, mach.Id, state)
 	mach.state = state
 	return nil
 }
@@ -126,7 +126,7 @@ func (mach *Mach) start(ctx context.Context) error {
 	if err := mach.waitFor(ctx, "started"); err != nil {
 		return err
 	}
-	log.Printf("pool: start %s %s %s: done", mach.pool.appName, mach.Name, mach.Id)
+	//log.Printf("pool: start %s %s %s: done", mach.pool.appName, mach.Name, mach.Id)
 	return nil
 }
 
@@ -152,7 +152,7 @@ func (mach *Mach) stop(ctx context.Context) error {
 	if err := mach.waitFor(ctx, "stopped"); err != nil {
 		return err
 	}
-	log.Printf("pool: stop %s %s %s: done", mach.pool.appName, mach.Name, mach.Id)
+	//log.Printf("pool: stop %s %s %s: done", mach.pool.appName, mach.Name, mach.Id)
 	return nil
 }
 
