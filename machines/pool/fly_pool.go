@@ -6,13 +6,26 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/superfly/coordBfaas/machines"
+	"github.com/superfly/coordBfaas/stats"
 )
 
 const MetaPoolKey = "pool_id"
+
+const (
+	statsAlloc   = "alloc"
+	statsCreate  = "create"
+	statsStart   = "start"
+	statsStop    = "stop"
+	statsDestroy = "destroy"
+)
 
 var cleanerDelay = 5 * time.Minute
 var ErrPoolClosed = fmt.Errorf("The Pool Is Closed")
@@ -70,6 +83,8 @@ type FlyPool struct {
 	machs    map[string]*Mach
 	free     chan *Mach
 	discards chan *Mach
+
+	stats map[string]*stats.Collector
 }
 
 var _ Pool = (*FlyPool)(nil)
@@ -125,6 +140,14 @@ func New(api *machines.Api, poolName, appName, image string, opts ...Opt) (*FlyP
 		metadata: metadata,
 
 		machs: make(map[string]*Mach),
+
+		stats: map[string]*stats.Collector{
+			statsAlloc:   stats.New(),
+			statsCreate:  stats.New(),
+			statsStart:   stats.New(),
+			statsStop:    stats.New(),
+			statsDestroy: stats.New(),
+		},
 	}
 
 	for _, opt := range opts {
@@ -240,6 +263,9 @@ func (p *FlyPool) addFreeMach(mach *Mach) bool {
 
 // createMach creates a new machine.
 func (p *FlyPool) createMach(ctx context.Context, start bool) (*Mach, error) {
+	dt := p.stats[statsCreate].Start()
+	defer dt.End()
+
 	expire := p.now().Add(p.leaseTime)
 	req := machines.CreateMachineReq{
 		Name:       fmt.Sprintf("worker-%s-%d", p.name, rand.Uint64()),
@@ -394,6 +420,9 @@ func (p *FlyPool) allocLeased(ctx context.Context) (*Mach, error) {
 
 // Alloc returns the next free machine, blocking if necessary.
 func (p *FlyPool) Alloc(ctx context.Context) (*Mach, error) {
+	dt := p.stats[statsAlloc].Start()
+	defer dt.End()
+
 	mach, err := p.allocLeased(ctx)
 	if err != nil {
 		return nil, err
@@ -552,9 +581,19 @@ func (p *FlyPool) cleanMach(ctx context.Context, m *machines.MachineResp) int {
 	}
 }
 
+func (p *FlyPool) showStats() {
+	keys := lo.Keys(p.stats)
+	slices.SortFunc(keys, strings.Compare)
+	for _, k := range keys {
+		log.Printf("pool: stats: %s: %+v", k, p.stats[k].Stats())
+	}
+}
+
 func (p *FlyPool) clean(ctx context.Context) {
 	log.Printf("pool: clean: starting")
 	for {
+		p.showStats()
+
 		log.Printf("pool: cleaning")
 		ms, err := p.api.List(ctx, p.appName)
 		if err != nil {

@@ -66,6 +66,9 @@ func (mach *Mach) start(ctx context.Context) error {
 		return nil
 	}
 
+	dt := mach.pool.stats[statsStart].Start()
+	defer dt.End()
+
 	nonceOpt := machines.LeaseNonce(mach.leaseNonce)
 	_, err := mach.pool.api.Start(ctx, mach.pool.appName, mach.Id, nonceOpt)
 	if err != nil {
@@ -84,6 +87,9 @@ func (mach *Mach) stop(ctx context.Context) error {
 		return nil
 	}
 
+	dt := mach.pool.stats[statsStop].Start()
+	defer dt.End()
+
 	log.Printf("pool: stop %s %s", mach.pool.appName, mach.Id)
 	mach.started = false
 	nonceOpt := machines.LeaseNonce(mach.leaseNonce)
@@ -99,6 +105,9 @@ func (mach *Mach) stop(ctx context.Context) error {
 }
 
 func (mach *Mach) destroy(ctx context.Context) error {
+	dt := mach.pool.stats[statsDestroy].Start()
+	defer dt.End()
+
 	log.Printf("pool: destroy %s %s", mach.pool.appName, mach.Id)
 	nonceOpt := machines.LeaseNonce(mach.leaseNonce)
 	ok, err := mach.pool.api.Destroy(ctx, mach.pool.appName, mach.Id, true, nonceOpt)
