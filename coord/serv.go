@@ -7,6 +7,12 @@ import (
 
 	"github.com/superfly/coordBfaas/auth"
 	"github.com/superfly/coordBfaas/machines/pool"
+	"github.com/superfly/coordBfaas/stats"
+)
+
+const (
+	statsRequest = "request"
+	statsProxy   = "proxy"
 )
 
 type Server struct {
@@ -14,6 +20,8 @@ type Server struct {
 	signer     auth.Signer
 	maxReqTime time.Duration
 	pool       pool.Pool
+
+	stats map[string]*stats.Collector
 }
 
 func New(pool pool.Pool, port int, privKey string, maxReqTime time.Duration) (*Server, error) {
@@ -26,6 +34,10 @@ func New(pool pool.Pool, port int, privKey string, maxReqTime time.Duration) (*S
 		pool:       pool,
 		signer:     signer,
 		maxReqTime: maxReqTime,
+		stats: map[string]*stats.Collector{
+			statsRequest: stats.New(),
+			statsProxy:   stats.New(),
+		},
 	}
 
 	mux := http.NewServeMux()

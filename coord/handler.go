@@ -61,6 +61,15 @@ func doWithRetry(body []byte, req *http.Request) (resp *http.Response, err error
 }
 
 func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		for k, v := range s.stats {
+			log.Printf("handleRun: stats %s: %+v", k, v.Stats())
+		}
+	}()
+
+	dtReq := s.stats[statsRequest].Start()
+	defer dtReq.End()
+
 	w.Header().Set("Coord", os.Getenv("FLY_MACHINE_ID"))
 
 	// We need the body multiple times, read it into memory.
@@ -95,7 +104,9 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	workReq.URL.RawQuery = r.URL.RawQuery
 
 	log.Printf("making request for %v to %v worker %v", s.maxReqTime, url, worker.Id)
+	dtProxy := s.stats[statsProxy].Start()
 	workResp, err := doWithRetry(body, workReq)
+	dtProxy.End()
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			// Do not output anything, we may have already outputted some.
