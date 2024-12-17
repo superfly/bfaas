@@ -4,10 +4,16 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"time"
 
+	"github.com/superfly/coordBfaas/japi"
 	"github.com/superfly/coordBfaas/machines"
 )
+
+const startRetryTimes = 4
+
+var startRetryWait = 50 * time.Millisecond
 
 // Mach is a machine in the pool.
 // A machine is owned by a pool if it has an unexpired lease, and metadata
@@ -99,8 +105,20 @@ func (mach *Mach) start(ctx context.Context) error {
 	dt := mach.pool.stats[statsStart].Start()
 	defer dt.End()
 
+	// Retry on 412 PreconditionFailed, which indicates that the machine is not fully stopped yet.
+	var err error
 	nonceOpt := machines.LeaseNonce(mach.leaseNonce)
-	_, err := mach.pool.api.Start(ctx, mach.pool.appName, mach.Id, nonceOpt)
+	wait := startRetryWait
+	for times := 0; times < startRetryTimes; times += 1 {
+		_, err = mach.pool.api.Start(ctx, mach.pool.appName, mach.Id, nonceOpt)
+		if !japi.ErrorIsStatus(err, http.StatusPreconditionFailed) {
+			break
+		}
+
+		log.Printf("pool: start %s %s %s: %s, retrying", mach.pool.appName, mach.Name, mach.Id, err)
+		time.Sleep(wait)
+		wait = 2 * wait
+	}
 	if err != nil {
 		return fmt.Errorf("api.Start %s %s: %w", mach.Name, mach.Id, err)
 	}
