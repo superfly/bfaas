@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/superfly/coordBfaas/japi"
 	"github.com/superfly/coordBfaas/machines"
 	"github.com/superfly/coordBfaas/stats"
 )
@@ -586,7 +587,7 @@ func (p *FlyPool) clean(ctx context.Context) {
 		p.showStats()
 
 		log.Printf("pool: cleaning")
-		ms, err := p.api.List(ctx, p.appName)
+		ms, err := p.api.List(ctx, p.appName, japi.ReqQuery("region", p.machRegion))
 		if err != nil {
 			log.Printf("pool: clean: api.List: %v", err)
 		} else {
