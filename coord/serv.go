@@ -7,6 +7,12 @@ import (
 
 	"github.com/superfly/coordBfaas/auth"
 	"github.com/superfly/coordBfaas/machines/pool"
+	"github.com/superfly/coordBfaas/stats"
+)
+
+const (
+	statsRequest = "request"
+	statsProxy   = "proxy"
 )
 
 type Server struct {
@@ -15,6 +21,8 @@ type Server struct {
 	maxReqTime time.Duration
 	pool       pool.Pool
 	rlim       *Limiter
+
+	stats map[string]*stats.Collector
 }
 
 func New(pool pool.Pool, port int, privKey string, maxReqTime time.Duration) (*Server, error) {
@@ -27,7 +35,11 @@ func New(pool pool.Pool, port int, privKey string, maxReqTime time.Duration) (*S
 		pool:       pool,
 		signer:     signer,
 		maxReqTime: maxReqTime,
-		rlim:       newLimiter(1, 10, time.Second), // 1 req/10s per ip src.
+		rlim:       newLimiter(6, 2, time.Minute), // 1 req/10s per ip src, initial burst of 2.
+		stats: map[string]*stats.Collector{
+			statsRequest: stats.New(),
+			statsProxy:   stats.New(),
+		},
 	}
 
 	mux := http.NewServeMux()
@@ -44,7 +56,7 @@ func New(pool pool.Pool, port int, privKey string, maxReqTime time.Duration) (*S
 		// Not setting write timeout, but we're managing request times.
 		//WriteTimeout:   maxReqTime,
 		MaxHeaderBytes: 4096,
-		Handler:        server.rlim.middleware(mux),
+		Handler:        mux,
 	}
 	return server, nil
 }

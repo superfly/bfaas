@@ -16,7 +16,7 @@ type Server struct {
 }
 
 func New(port int, machId string, pubKey string) (*Server, error) {
-	verifier, err := auth.NewVerifier(pubKey, machId, 5*time.Second)
+	verifier, err := auth.NewVerifier(pubKey, machId, 60*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("building verifier: %w", err)
 	}

@@ -11,9 +11,19 @@ import (
 
 	"github.com/superfly/coordBfaas/japi"
 	"github.com/superfly/coordBfaas/machines"
+	"github.com/superfly/coordBfaas/stats"
 )
 
 const MetaPoolKey = "pool_id"
+
+const (
+	statsAlloc   = "alloc"
+	statsCreate  = "create"
+	statsStart   = "start"
+	statsStop    = "stop"
+	statsDestroy = "destroy"
+	statsLease   = "lease"
+)
 
 var cleanerDelay = 5 * time.Minute
 var ErrPoolClosed = fmt.Errorf("The Pool Is Closed")
@@ -67,10 +77,11 @@ type FlyPool struct {
 	freeWg     sync.WaitGroup
 
 	mu       sync.Mutex
-	size     int // note: size may be greater than len(machs) during machine creation.
 	machs    map[string]*Mach
 	free     chan *Mach
 	discards chan *Mach
+
+	stats map[string]*stats.Collector
 }
 
 var _ Pool = (*FlyPool)(nil)
@@ -111,7 +122,6 @@ func New(api *machines.Api, poolName, appName, image string, opts ...Opt) (*FlyP
 	p := &FlyPool{
 		name:       poolName,
 		capacity:   2,
-		size:       0,
 		leaseTime:  30 * time.Minute,
 		workerTime: time.Minute,
 
@@ -126,6 +136,15 @@ func New(api *machines.Api, poolName, appName, image string, opts ...Opt) (*FlyP
 		metadata: metadata,
 
 		machs: make(map[string]*Mach),
+
+		stats: map[string]*stats.Collector{
+			statsAlloc:   stats.New(),
+			statsCreate:  stats.New(),
+			statsStart:   stats.New(),
+			statsStop:    stats.New(),
+			statsDestroy: stats.New(),
+			statsLease:   stats.New(),
+		},
 	}
 
 	for _, opt := range opts {
@@ -138,16 +157,6 @@ func New(api *machines.Api, poolName, appName, image string, opts ...Opt) (*FlyP
 
 	ctx, cancel := context.WithCancel(context.Background())
 	p.cancel = cancel
-
-	if false {
-		// Add one free machine to the pool to detect creation errors early.
-		mach, err := p.createMach(ctx, false)
-		if err != nil {
-			p.cancel()
-			return nil, err
-		}
-		p.addFreeMach(mach)
-	}
 
 	// claim orphans for our pool and cleanup, in the background.
 	p.wg.Add(2)
@@ -213,9 +222,9 @@ func (p *FlyPool) Destroy() error {
 	// Destroy All Machines!
 	bgctx := context.Background()
 	var err error
-	for machid, mach := range p.machs {
+	for _, mach := range p.machs {
 		err = errors.Join(err, mach.destroy(bgctx))
-		delete(p.machs, machid)
+		delete(p.machs, mach.Name)
 	}
 	return err
 }
@@ -226,26 +235,23 @@ func (p *FlyPool) addFreeMach(mach *Mach) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.machs[mach.Id] != nil {
-		panic(fmt.Errorf("re-adding existing machine %v", mach.Id))
-	}
-
-	if p.size < p.capacity {
-		p.size += 1
-		p.machs[mach.Id] = mach
+	if len(p.machs) < p.capacity {
+		p.machs[mach.Name] = mach
 		p.free <- mach
 		return true
 	}
 	return false
 }
 
-// createMach creates a new machine.
-func (p *FlyPool) createMach(ctx context.Context, start bool) (*Mach, error) {
-	expire := p.now().Add(p.leaseTime)
+// createMach creates a new machine and starts it.
+func (p *FlyPool) createMach(ctx context.Context, mach *Mach) error {
+	dt := p.stats[statsCreate].Start()
+	defer dt.End()
+
 	req := machines.CreateMachineReq{
-		Name:       fmt.Sprintf("worker-%s-%d", p.name, rand.Uint64()),
-		LeaseTTL:   int(p.leaseTime.Seconds()),
-		SkipLaunch: !start,
+		Name:       mach.Name,
+		LeaseTTL:   int(mach.leaseExpires.Sub(time.Now()).Seconds()),
+		SkipLaunch: false,
 		Region:     p.machRegion,
 		Config: machines.MachineConfig{
 			Image: p.machImage,
@@ -277,14 +283,51 @@ func (p *FlyPool) createMach(ctx context.Context, start bool) (*Mach, error) {
 	log.Printf("pool: create %s %s", p.appName, req.Name)
 	flym, err := p.api.Create(ctx, p.appName, &req)
 	if err != nil {
-		return nil, fmt.Errorf("api.Create %s: %w", p.appName, err)
+		return fmt.Errorf("api.Create %s: %w", p.appName, err)
 	}
 
-	mach := newMach(p, flym, flym.Nonce, expire, start)
-	if start {
-		mach.waitFor(ctx, "started")
+	mach.Id = flym.Id
+	mach.InstanceId = flym.InstanceId
+	mach.leaseNonce = flym.Nonce
+
+	//log.Printf("pool: create %s %s: success %v", p.appName, req.Name, mach.Id)
+	if err := mach.waitFor(ctx, "started"); err != nil {
+		return fmt.Errorf("api.Create %s: %w", p.appName, err)
 	}
 
+	return nil
+}
+
+// growPool creates a new machine and adds it to the pool if the
+// pool is not yet at capacity. It returns the created machine but
+// does not add it to the free list.
+func (p *FlyPool) growPool(ctx context.Context) (*Mach, error) {
+	var nascent *Mach
+	defer p.discardMach(nascent, "growPool failed")
+
+	// Allocate the nascent machine under lock.
+	p.mu.Lock()
+	if len(p.machs) < p.capacity {
+		name := fmt.Sprintf("worker-%s-%d", p.name, rand.Uint64())
+		expire := p.now().Add(p.leaseTime)
+		nascent = newMachNascent(p, name, expire)
+		p.machs[nascent.Name] = nascent
+	}
+	p.mu.Unlock()
+
+	if nascent == nil {
+		log.Printf("pool: growPool: cant grow")
+		return nil, nil
+	}
+
+	// Bring the nascent machine up, or discard it.
+	if err := p.createMach(ctx, nascent); err != nil {
+		log.Printf("pool: growPool: createMach failed: %v", err)
+		return nil, err
+	}
+
+	mach := nascent
+	nascent = nil
 	return mach, nil
 }
 
@@ -317,43 +360,6 @@ func (p *FlyPool) waitForFree(ctx context.Context) (*Mach, error) {
 	}
 }
 
-// growPool creates a new machine and adds it to the pool if the
-// pool is not yet at capacity. It returns the created machine but
-// does not add it to the free list.
-func (p *FlyPool) growPool(ctx context.Context) (*Mach, error) {
-	p.mu.Lock()
-	create := p.size < p.capacity
-	if create {
-		p.size += 1 // indicate intention to grow the pool
-	}
-	p.mu.Unlock()
-
-	if !create {
-		log.Printf("pool: growPool: cant grow")
-		return nil, nil
-	}
-
-	mach, err := p.createMach(ctx, false)
-	if err != nil {
-		p.mu.Lock()
-		p.size -= 1 // we failed, roll back the size change.
-		p.mu.Unlock()
-
-		log.Printf("pool: growPool: createMach failed: %v", err)
-		return nil, err
-	}
-
-	if err := mach.waitFor(ctx, "stopped"); err != nil {
-		return nil, err
-	}
-
-	p.mu.Lock()
-	// p.size has already been updated...
-	p.machs[mach.Id] = mach
-	p.mu.Unlock()
-	return mach, nil
-}
-
 // allocLeased gets the next free machine that has enough lease time left,
 // discarding any machines that do not have enough lease time left.
 // It grows the pool automatically if there are no free machines immediately
@@ -362,13 +368,11 @@ func (p *FlyPool) allocLeased(ctx context.Context, waitForFree bool) (*Mach, err
 	var err error
 	for {
 		mach, err := func() (*Mach, error) {
-			log.Printf("pool: alloc: get free immediately xxx")
 			mach := p.getFreeImmediately()
 			if mach != nil {
 				return mach, nil
 			}
 
-			log.Printf("pool: alloc: grow pool xxx")
 			mach, err = p.growPool(ctx)
 			if err != nil || mach == nil {
 				return nil, err
@@ -393,6 +397,17 @@ func (p *FlyPool) allocLeased(ctx context.Context, waitForFree bool) (*Mach, err
 			return mach, nil
 		}
 
+		// if the lease is still good, extend it.
+		if mach.leaseExpires.After(p.now()) {
+			expire := p.now().Add(p.leaseTime)
+			err = mach.updateLease(ctx, expire)
+			if err == nil {
+				return mach, nil
+			}
+
+			log.Printf("pool: alloc: extend lease failed: %v", err)
+		}
+
 		p.discardMach(mach, "not enough lease left")
 		// and try again...
 	}
@@ -400,6 +415,9 @@ func (p *FlyPool) allocLeased(ctx context.Context, waitForFree bool) (*Mach, err
 
 // Alloc returns the next free machine, blocking if necessary.
 func (p *FlyPool) Alloc(ctx context.Context, waitForFree bool) (*Mach, error) {
+	dt := p.stats[statsAlloc].Start()
+	defer dt.End()
+
 	mach, err := p.allocLeased(ctx, waitForFree)
 	if err != nil || mach == nil {
 		return nil, err
@@ -411,7 +429,7 @@ func (p *FlyPool) Alloc(ctx context.Context, waitForFree bool) (*Mach, error) {
 		return nil, err
 	}
 
-	log.Printf("pool: alloc %s %s", p.appName, mach.Id)
+	log.Printf("pool: alloc %s %s %s", p.appName, mach.Name, mach.Id)
 	return mach, nil
 }
 
@@ -422,6 +440,7 @@ func (p *FlyPool) freeMach(mach *Mach) {
 	if p.isShutdown {
 		return
 	}
+	log.Printf("pool: free %s %s %s", p.appName, mach.Name, mach.Id)
 
 	// Don't make caller wait for the machine to stop,
 	p.freeWg.Add(1)
@@ -430,23 +449,26 @@ func (p *FlyPool) freeMach(mach *Mach) {
 
 		ctx := context.Background()
 		if err := mach.stop(ctx); err != nil {
-			log.Printf("pool free: stopMach: %v", err)
+			log.Printf("pool free: stopMach %v %v: %v", mach.Name, mach.Id, err)
 			p.discardMach(mach, "stop machine failed")
 			return
 		}
 
+		//log.Printf("pool free: stopMach %v %v: done", mach.Name, mach.Id)
 		p.free <- mach
-		log.Printf("pool free: stopMach done")
 	}()
 }
 
 // discardMach asynchronously destroys the machine or fails silently.
 func (p *FlyPool) discardMach(mach *Mach, msg string) {
-	log.Printf("pool: discard machine %v: %v", mach.Id, msg)
+	if mach == nil {
+		return
+	}
+
+	log.Printf("pool: discard machine %v %v: %v", mach.Name, mach.Id, msg)
 
 	p.mu.Lock()
-	delete(p.machs, mach.Id)
-	p.size -= 1
+	delete(p.machs, mach.Name)
 	p.mu.Unlock()
 
 	p.discards <- mach
@@ -494,7 +516,7 @@ func (p *FlyPool) getLease(ctx context.Context, machId string) (*machines.LeaseD
 // It would be greatly simplified if listing machines returned back lease information.
 func (p *FlyPool) cleanMach(ctx context.Context, m *machines.MachineResp) int {
 	p.mu.Lock()
-	poolMach := p.machs[m.Id]
+	poolMach := p.machs[m.Name]
 	p.mu.Unlock()
 
 	alreadyInOurPool := poolMach != nil
@@ -502,13 +524,15 @@ func (p *FlyPool) cleanMach(ctx context.Context, m *machines.MachineResp) int {
 	createdAt, _ := time.Parse(time.RFC3339, m.CreatedAt)
 	age := p.now().Sub(createdAt)
 	probablyExpired := age > p.leaseTime
-	log.Printf("pool: clean: mach %v: age=%v, ours=%v inpool=%v", m.Id, age, ours, alreadyInOurPool)
+	log.Printf("pool: clean: mach %v %v: age=%v, ours=%v inpool=%v", m.Name, m.Id, age, ours, alreadyInOurPool)
 
 	if alreadyInOurPool {
+		// TODO: extend leases here for machines with a lease that is running low?
+
 		if !poolMach.leaseSufficient(0) {
 			// Destroy it, but leave it in our pool and free queue.
 			// It will get discarded when someone tries to allocate it.
-			log.Printf("pool: clean: mach %v: age=%v, destroying, ours", m.Id, age)
+			log.Printf("pool: clean: mach %v %v: age=%v, destroying, ours", m.Name, m.Id, age)
 			poolMach.destroy(ctx)
 		}
 		return 0
@@ -517,7 +541,7 @@ func (p *FlyPool) cleanMach(ctx context.Context, m *machines.MachineResp) int {
 	if !ours {
 		if probablyExpired {
 			// Try to destroy it. This wont work if it has a valid lease since we don't provide the lease nonce.
-			log.Printf("pool: clean: mach %v: age=%v, destroying, not ours", m.Id, age)
+			log.Printf("pool: clean: mach %v %v: age=%v, destroying, not ours", m.Name, m.Id, age)
 			p.api.Destroy(ctx, p.appName, m.Id, true)
 		}
 		return 0
@@ -525,14 +549,13 @@ func (p *FlyPool) cleanMach(ctx context.Context, m *machines.MachineResp) int {
 
 	lease, err := p.getLease(ctx, m.Id)
 	if err != nil {
-		log.Printf("pool: clean: mach %v: destroying, error getting lease: %v", m.Id, err)
+		log.Printf("pool: clean: mach %v %v: destroying, error getting lease: %v", m.Name, m.Id, err)
 		p.api.Destroy(ctx, p.appName, m.Id, true)
 		return 0
 	}
 
 	leaseExpires := time.Unix(lease.ExpiresAt, 0)
-	started := m.State == "started"
-	mach := newMach(p, m, lease.Nonce, leaseExpires, started)
+	mach := newMachFromFly(p, m, lease.Nonce, leaseExpires)
 
 	err = func() error {
 		if !mach.leaseSufficient(p.workerTime) {
@@ -550,7 +573,7 @@ func (p *FlyPool) cleanMach(ctx context.Context, m *machines.MachineResp) int {
 		return nil
 	}()
 	if err != nil {
-		log.Printf("pool: clean: mach %v: destroying: %v", m.Id, err)
+		log.Printf("pool: clean: mach %v %v: destroying: %v", m.Name, m.Id, err)
 		mach.destroy(ctx)
 		return 0
 	} else {
@@ -558,9 +581,17 @@ func (p *FlyPool) cleanMach(ctx context.Context, m *machines.MachineResp) int {
 	}
 }
 
+func (p *FlyPool) showStats() {
+	for k, stat := range p.stats {
+		log.Printf("pool: stats: %s: %+v", k, stat.Stats())
+	}
+}
+
 func (p *FlyPool) clean(ctx context.Context) {
 	log.Printf("pool: clean: starting")
 	for {
+		p.showStats()
+
 		log.Printf("pool: cleaning")
 		ms, err := p.api.List(ctx, p.appName, japi.ReqQuery("region", p.machRegion))
 		if err != nil {
