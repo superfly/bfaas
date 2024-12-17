@@ -16,7 +16,7 @@ const signPrivKeySize = 64
 const signPubKeySize = 32
 
 var ErrBadAuth = fmt.Errorf("Authentication failed")
-var timeSlack = 2 * time.Second
+var timeSlack = 5 * time.Second
 
 // randomBytes returns sz random bytes.
 // It should never fail, but if it does, it will panic.
