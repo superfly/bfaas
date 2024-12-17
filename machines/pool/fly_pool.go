@@ -25,6 +25,7 @@ const (
 	statsStart   = "start"
 	statsStop    = "stop"
 	statsDestroy = "destroy"
+	statsLease   = "lease"
 )
 
 var cleanerDelay = 5 * time.Minute
@@ -145,6 +146,7 @@ func New(api *machines.Api, poolName, appName, image string, opts ...Opt) (*FlyP
 			statsStart:   stats.New(),
 			statsStop:    stats.New(),
 			statsDestroy: stats.New(),
+			statsLease:   stats.New(),
 		},
 	}
 
@@ -395,6 +397,17 @@ func (p *FlyPool) allocLeased(ctx context.Context) (*Mach, error) {
 			return mach, nil
 		}
 
+		// if the lease is still good, extend it.
+		if mach.leaseExpires.After(p.now()) {
+			expire := p.now().Add(p.leaseTime)
+			err = mach.updateLease(ctx, expire)
+			if err == nil {
+				return mach, nil
+			}
+
+			log.Printf("pool: alloc: extend lease failed: %v", err)
+		}
+
 		p.discardMach(mach, "not enough lease left")
 		// and try again...
 	}
@@ -427,6 +440,7 @@ func (p *FlyPool) freeMach(mach *Mach) {
 	if p.isShutdown {
 		return
 	}
+	log.Printf("pool: free %s %s %s", p.appName, mach.Name, mach.Id)
 
 	// Don't make caller wait for the machine to stop,
 	p.freeWg.Add(1)
@@ -513,6 +527,8 @@ func (p *FlyPool) cleanMach(ctx context.Context, m *machines.MachineResp) int {
 	log.Printf("pool: clean: mach %v %v: age=%v, ours=%v inpool=%v", m.Name, m.Id, age, ours, alreadyInOurPool)
 
 	if alreadyInOurPool {
+		// TODO: extend leases here for machines with a lease that is running low?
+
 		if !poolMach.leaseSufficient(0) {
 			// Destroy it, but leave it in our pool and free queue.
 			// It will get discarded when someone tries to allocate it.

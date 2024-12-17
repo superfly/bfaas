@@ -190,3 +190,42 @@ func TestCreateWithLease(t *testing.T) {
 	log.Printf("destroy %s: %v", mach.Id, ok)
 	assert.True(t, ok)
 }
+
+func TestLeaseRenew(t *testing.T) {
+	ctx := context.Background()
+	appName, api := getTestApi(t)
+
+	// Create
+	log.Printf("start")
+	name := fmt.Sprintf("worker-leased-%d", os.Getpid())
+	mach, err := api.Create(ctx, appName, &CreateMachineReq{
+		Config:   machConfig,
+		Region:   "qmx",
+		Name:     name,
+		LeaseTTL: 500,
+	})
+	assert.NoError(t, err)
+	nonce := mach.Nonce
+	defer api.Destroy(ctx, appName, mach.Id, true, LeaseNonce(nonce))
+
+	log.Printf("created %v: %+v", mach.Id, mach)
+	assert.Equal(t, mach.Name, name)
+	assert.Equal(t, mach.Region, "qmx")
+	assert.True(t, len(nonce) > 0)
+
+	lease, err := api.GetLease(ctx, appName, mach.Id)
+	assert.NoError(t, err)
+	assert.Equal(t, lease.Status, "success")
+	expires := lease.Data.ExpiresAt
+	log.Printf("get lease %v: %+v", mach.Id, lease.Data)
+
+	lease, err = api.Lease(ctx, appName, mach.Id, &LeaseReq{Ttl: 600}, LeaseNonce(nonce))
+	assert.NoError(t, err)
+	log.Printf("update lease %v: %+v", mach.Id, lease.Data)
+	assert.Equal(t, lease.Status, "success")
+	nonce2 := lease.Data.Nonce
+	expires2 := lease.Data.ExpiresAt
+	assert.Equal(t, nonce, nonce2)
+	log.Printf("expires %v -> %v", expires, expires2)
+	assert.True(t, expires2 > expires)
+}

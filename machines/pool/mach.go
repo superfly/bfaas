@@ -157,6 +157,25 @@ func (mach *Mach) destroy(ctx context.Context) error {
 	return nil
 }
 
+func (mach *Mach) updateLease(ctx context.Context, exp time.Time) error {
+	dt := mach.pool.stats[statsLease].Start()
+	defer dt.End()
+
+	log.Printf("pool: updateLease %s %s %s", mach.pool.appName, mach.Name, mach.Id)
+	ttl := int(exp.Sub(mach.pool.now()).Seconds())
+	nonceOpt := machines.LeaseNonce(mach.leaseNonce)
+	lease, err := mach.pool.api.Lease(ctx, mach.pool.appName, mach.Id, &machines.LeaseReq{Ttl: ttl}, nonceOpt)
+	if err != nil {
+		return fmt.Errorf("api.Lease %s %s: %w", mach.Id, mach.Name, err)
+	}
+	if lease.Status != "success" {
+		return fmt.Errorf("api.Lease %s %s: bad status %s", mach.Id, mach.Name, lease.Status)
+	}
+
+	mach.leaseExpires = exp
+	return nil
+}
+
 // leaseSufficient returns true if the lease has at least dt time left.
 func (mach *Mach) leaseSufficient(dt time.Duration) bool {
 	needUntil := mach.pool.now().Add(dt)
