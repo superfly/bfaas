@@ -20,6 +20,7 @@ type Mach struct {
 	Url        string
 	Id         string
 	InstanceId string
+	Name       string
 
 	// Free stops a machine and returns it to the pool.
 	// This can block for a few seconds, but is safe to call as `go mach.Free()`.
@@ -30,39 +31,68 @@ type Mach struct {
 	pool         *FlyPool
 	leaseNonce   string
 	leaseExpires time.Time
-	started      bool
+	state        string
 }
 
-func newMach(p *FlyPool, flym *machines.MachineResp, leaseNonce string, leaseExpires time.Time, started bool) *Mach {
+// newMachNascent makes a pre-created Mach. Caller must fill in Id, leaseNonce, and InstanceId once started.
+func newMachNascent(p *FlyPool, name string, leaseExpires time.Time) *Mach {
+	m := &Mach{
+		Url:        fmt.Sprintf("http://%s.flycast", p.appName),
+		Id:         "",
+		Name:       name,
+		InstanceId: "",
+
+		pool:         p,
+		leaseExpires: leaseExpires,
+		leaseNonce:   "",
+		state:        "nascent",
+	}
+	m.Free = func() { p.freeMach(m) }
+	return m
+}
+
+// newMachFromFly makes a Mach from a fly machine listing.
+func newMachFromFly(p *FlyPool, flym *machines.MachineResp, leaseNonce string, leaseExpires time.Time) *Mach {
 	m := &Mach{
 		Url:        fmt.Sprintf("http://%s.flycast", p.appName),
 		Id:         flym.Id,
+		Name:       flym.Name,
 		InstanceId: flym.InstanceId,
 
 		pool:         p,
 		leaseExpires: leaseExpires,
 		leaseNonce:   leaseNonce,
-		started:      started,
+		state:        flym.State,
 	}
 	m.Free = func() { p.freeMach(m) }
 	return m
 }
 
 func (mach *Mach) waitFor(ctx context.Context, state string) error {
-	log.Printf("pool: wait for %s %s %s", mach.pool.appName, mach.Id, state)
+	if mach.Id == "" {
+		return fmt.Errorf("pool: waitFor %s %s %s: cant wait for nascent machine", mach.pool.appName, mach.Name, state)
+	}
+
+	log.Printf("pool: wait for %s %s %s %s", mach.pool.appName, mach.Name, mach.Id, state)
 	nonceOpt := machines.LeaseNonce(mach.leaseNonce)
 	ok, err := mach.pool.api.WaitFor(ctx, mach.pool.appName, mach.Id, mach.InstanceId, 60*time.Second, state, nonceOpt)
 	err = checkOk(ok, err)
 	if err != nil {
-		log.Printf("pool: wait for %s %s %s: %v", mach.pool.appName, mach.Id, state, err)
-		return fmt.Errorf("api.WaitFor %s %v: %w", mach.Id, state, err)
+		log.Printf("pool: wait for %s %s %s %s: %v", mach.pool.appName, mach.Name, mach.Id, state, err)
+		return fmt.Errorf("api.WaitFor %s %s %v: %w", mach.Name, mach.Id, state, err)
 	}
+	log.Printf("pool: wait for %s %s %s %s: done", mach.pool.appName, mach.Name, mach.Id, state)
+	mach.state = state
 	return nil
 }
 
 func (mach *Mach) start(ctx context.Context) error {
-	log.Printf("pool: start %s %s", mach.pool.appName, mach.Id)
-	if mach.started {
+	if mach.Id == "" {
+		return fmt.Errorf("pool: start %s %s: cant start nascent machine", mach.pool.appName, mach.Name)
+	}
+
+	log.Printf("pool: start %s %s %s", mach.pool.appName, mach.Name, mach.Id)
+	if mach.state == "started" {
 		return nil
 	}
 
@@ -72,48 +102,57 @@ func (mach *Mach) start(ctx context.Context) error {
 	nonceOpt := machines.LeaseNonce(mach.leaseNonce)
 	_, err := mach.pool.api.Start(ctx, mach.pool.appName, mach.Id, nonceOpt)
 	if err != nil {
-		return fmt.Errorf("api.Start %s: %w", mach.Id, err)
+		return fmt.Errorf("api.Start %s %s: %w", mach.Name, mach.Id, err)
 	}
 
 	if err := mach.waitFor(ctx, "started"); err != nil {
 		return err
 	}
-	mach.started = true
+	log.Printf("pool: start %s %s %s: done", mach.pool.appName, mach.Name, mach.Id)
 	return nil
 }
 
 func (mach *Mach) stop(ctx context.Context) error {
-	if !mach.started {
+	if mach.Id == "" {
+		return fmt.Errorf("pool: stop %s %s: cant stop nascent machine", mach.pool.appName, mach.Name)
+	}
+
+	if mach.state == "stopped" {
 		return nil
 	}
 
 	dt := mach.pool.stats[statsStop].Start()
 	defer dt.End()
 
-	log.Printf("pool: stop %s %s", mach.pool.appName, mach.Id)
-	mach.started = false
+	log.Printf("pool: stop %s %s %s", mach.pool.appName, mach.Name, mach.Id)
 	nonceOpt := machines.LeaseNonce(mach.leaseNonce)
 	_, err := mach.pool.api.Stop(ctx, mach.pool.appName, mach.Id, nonceOpt)
 	if err != nil {
-		return fmt.Errorf("api.Stop %s: %w", mach.Id, err)
+		return fmt.Errorf("api.Stop %s %s: %w", mach.Name, mach.Id, err)
 	}
 
 	if err := mach.waitFor(ctx, "stopped"); err != nil {
 		return err
 	}
+	log.Printf("pool: stop %s %s %s: done", mach.pool.appName, mach.Name, mach.Id)
 	return nil
 }
 
 func (mach *Mach) destroy(ctx context.Context) error {
+	if mach.Id == "" {
+		return nil
+	}
+
 	dt := mach.pool.stats[statsDestroy].Start()
 	defer dt.End()
 
-	log.Printf("pool: destroy %s %s", mach.pool.appName, mach.Id)
+	log.Printf("pool: destroy %s %s %s", mach.pool.appName, mach.Name, mach.Id)
+	mach.state = "destroyed"
 	nonceOpt := machines.LeaseNonce(mach.leaseNonce)
 	ok, err := mach.pool.api.Destroy(ctx, mach.pool.appName, mach.Id, true, nonceOpt)
 	err = checkOk(ok, err)
 	if err != nil {
-		return fmt.Errorf("api.Destroy %s: %w", mach.Id, err)
+		return fmt.Errorf("api.Destroy %s %s: %w", mach.Id, mach.Name, err)
 	}
 	return nil
 }
