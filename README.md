@@ -81,7 +81,7 @@ PRIVATE=xxx
 % fly app create bfaas-worker -o bfaas
 % fly -a bfaas-worker ips allocate-v6 --private --org bfaas
 % fly -a bfaas-worker secrets set PUBLIC=$PUBLIC
-% fly deploy -c fly.toml.basher --update-only -a bfaas-worker
+% fly deploy -c fly.toml.worker --update-only -a bfaas-worker
    ... capture IMAGE=registry.fly.io/bfaas-worker:deployment-01JF07KZF9JEC61S0AA895PW0F
 
 # Make bfaas app as our coordinator
@@ -99,7 +99,7 @@ PRIVATE=xxx
 
 To update the basher image, use the `./updateWorker.sh` script, or manually:
 ```
-% fly -a bfaas-worker deploy -c fly.toml.basher --update-only
+% fly deploy -c fly.toml.worker --update-only
    ... capture IMAGE=registry.fly.io/bfaas-worker:deployment-01JE4XPGN5KVRBE2Z1H0FWGDPA
 % fly secrets set WORKER_IMAGE=$IMAGE
 ```
