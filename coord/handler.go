@@ -26,10 +26,12 @@ func copyFlusher(w http.ResponseWriter, r io.Reader) (int, error) {
 	tot := 0
 	for {
 		n, err := r.Read(buf)
-		if err != nil || n == 0 {
+		if n == 0 {
+			log.Printf("coord: copyFlusher tot=%d n=%d err=%v", tot, n, err)
 			return tot, err
 		}
 
+		log.Printf("coord: proxying %q", string(buf[:n]))
 		n, err = w.Write(buf[:n])
 		tot += n
 		if err != nil {
@@ -48,7 +50,7 @@ func doWithRetry(body []byte, req *http.Request) (resp *http.Response, err error
 	delay := retryDelay
 	for i := 0; i < retryTimes; i += 1 {
 		if i > 0 {
-			log.Printf("%v: retrying after %v", err, delay)
+			log.Printf("coord: %v: retrying after %v", err, delay)
 			time.Sleep(delay)
 			delay = 2 * delay
 		}
@@ -65,7 +67,7 @@ func doWithRetry(body []byte, req *http.Request) (resp *http.Response, err error
 func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		for k, v := range s.stats {
-			log.Printf("handleRun: stats %s: %+v", k, v.Stats())
+			log.Printf("coord: handleRun: stats %s: %+v", k, v.Stats())
 		}
 	}()
 
@@ -81,14 +83,14 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "read body failed", http.StatusInternalServerError)
 		return
 	}
-	log.Printf("handleRun %v %q", r.Header, string(body))
+	log.Printf("coord: handleRun %v %q", r.Header, string(body))
 
 	replayMeta := r.Header.Get("fly-replay-src")
 	retriesRemaining := 1
 
 	// meta has the retries
 	if replayMeta != "" {
-		log.Printf("replay meta: %v", replayMeta)
+		log.Printf("coord: replay meta: %v", replayMeta)
 		matches := regexp.MustCompile(`state=retries-(-?\d+)$`).FindStringSubmatch(replayMeta)
 		if matches != nil {
 			r, err := strconv.Atoi(matches[0])
@@ -100,20 +102,20 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	waitForMachine := retriesRemaining <= 0
 	worker, err := s.pool.Alloc(context.Background(), waitForMachine)
 	if err != nil {
-		log.Printf("pool.Alloc: %v", err)
+		log.Printf("coord: pool.Alloc: %v", err)
 		http.Error(w, "create worker failed", http.StatusInternalServerError)
 		return
 	}
 
 	if worker == nil && retriesRemaining <= 0 {
-		log.Printf("no worker available, out of retries")
+		log.Printf("coord: no worker available, out of retries")
 		http.Error(w, "no worker available", http.StatusServiceUnavailable)
 		return
 	}
 	if worker == nil {
 		retriesRemaining = retriesRemaining - 1
 		// gotta replay
-		log.Printf("no worker available, fly-replay")
+		log.Printf("coord: no worker available, fly-replay")
 		//w.Header().Set("fly-replay", "elsewhere=true")
 
 		//w.Header().Set("fly-replay", fmt.Sprintf("elsewhere=true;state=%d", retriesRemaining))
@@ -129,7 +131,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	url := fmt.Sprintf("%s/run", worker.Url)
 	workReq, err := http.NewRequestWithContext(ctx, "POST", url, nil) // body filled in by doWithRetry
 	if err != nil {
-		log.Printf("NewRequestWithContext: %v", err)
+		log.Printf("coord: NewRequestWithContext: %v", err)
 		http.Error(w, "create worker request failed", http.StatusInternalServerError)
 		return
 	}
@@ -139,25 +141,25 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	workReq.Header.Set("fly-force-instance-id", worker.Id)
 	workReq.URL.RawQuery = r.URL.RawQuery
 
-	log.Printf("making request for %v to %v worker %v", s.maxReqTime, url, worker.Id)
+	log.Printf("coord: making request for %v to %v worker %v", s.maxReqTime, url, worker.Id)
 	dtProxy := s.stats[statsProxy].Start()
 	workResp, err := doWithRetry(body, workReq)
 	dtProxy.End()
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			// Do not output anything, we may have already outputted some.
-			log.Printf("client.Do timed out")
+			log.Printf("coord: client.Do timed out")
 			return
 		}
 
-		log.Printf("client.Do: %v", err)
+		log.Printf("coord: client.Do: %v", err)
 		http.Error(w, "make worker request failed", http.StatusInternalServerError)
 		return
 	}
 	defer workResp.Body.Close()
 
 	if id := workResp.Header.Get("worker"); id != worker.Id {
-		log.Printf("warning: request went to %v not %v", id, worker.Id)
+		log.Printf("coord: warning: request went to %v not %v", id, worker.Id)
 	}
 
 	for k, v := range workResp.Header {
@@ -165,5 +167,6 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(workResp.StatusCode)
 	copyFlusher(w, workResp.Body)
+	log.Printf("coord: finished proxying response")
 	workResp.Body.Close()
 }

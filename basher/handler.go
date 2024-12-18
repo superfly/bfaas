@@ -20,6 +20,7 @@ func (s *Server) withAuth(next Handler) Handler {
 	return func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
 		if err := s.verifier(time.Now(), auth); err != nil {
+			log.Printf("basher: received unauthorized request")
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -31,6 +32,7 @@ func (s *Server) withAuth(next Handler) Handler {
 func (s *Server) withOnce(next Handler) Handler {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.used.Swap(true) {
+			log.Printf("basher: received second request")
 			http.Error(w, "conflict", http.StatusConflict)
 			return
 		}
@@ -55,6 +57,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
+	log.Printf("basher: running %q", string(bs))
 	cmd := exec.CommandContext(r.Context(), "/bin/bash", "-c", string(bs))
 
 	stdout, err := cmd.StdoutPipe()
@@ -82,6 +85,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 			}
 			s := string(buf[:n])
 
+			log.Printf("basher: delivering %s %q", event, s)
 			mu.Lock()
 			if raw {
 				fmt.Fprintf(w, "%s", s)
@@ -104,7 +108,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 
 	var exitCode int
 	if err := cmd.Run(); err != nil {
-		log.Printf("command exit %v", err)
+		log.Printf("basher: command exit %v", err)
 
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
@@ -115,6 +119,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wg.Wait()
+	log.Printf("basher: done with code %d", exitCode)
 	if raw {
 		fmt.Fprintf(w, "\nexit: %d\n", exitCode)
 	} else {
