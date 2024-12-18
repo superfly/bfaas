@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"strings"
 	"sync"
 	"time"
 
@@ -48,6 +49,21 @@ func sleepWithContext(ctx context.Context, dt time.Duration) error {
 	case <-time.After(dt):
 		return nil
 	}
+}
+
+func newWorkerName(poolName string) string {
+	return fmt.Sprintf("worker-%s-%d", poolName, rand.Uint64())
+}
+
+func parseWorkerName(name string) (string, error) {
+	ws := strings.Split(name, "-")
+	if len(ws) != 3 {
+		return "", fmt.Errorf("malformed worker name format")
+	}
+	if ws[0] != "worker" {
+		return "", fmt.Errorf("malformed worker name tag")
+	}
+	return ws[1], nil
 }
 
 // FlyPool is a pool of Fly machines.
@@ -308,7 +324,7 @@ func (p *FlyPool) growPool(ctx context.Context) (*Mach, error) {
 	// Allocate the nascent machine under lock.
 	p.mu.Lock()
 	if len(p.machs) < p.capacity {
-		name := fmt.Sprintf("worker-%s-%d", p.name, rand.Uint64())
+		name := newWorkerName(p.name)
 		expire := p.now().Add(p.leaseTime)
 		nascent = newMachNascent(p, name, expire)
 		p.machs[nascent.Name] = nascent
@@ -522,7 +538,8 @@ func (p *FlyPool) cleanMach(ctx context.Context, m *machines.MachineResp) int {
 	p.mu.Unlock()
 
 	alreadyInOurPool := poolMach != nil
-	ours := m.Config.Metadata[MetaPoolKey] == p.metadata
+	poolNameFromName, _ := parseWorkerName(m.Name)
+	ours := m.Config.Metadata[MetaPoolKey] == p.metadata && poolNameFromName == p.name
 	createdAt, _ := time.Parse(time.RFC3339, m.CreatedAt)
 	age := p.now().Sub(createdAt)
 	probablyExpired := age > p.leaseTime
