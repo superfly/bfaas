@@ -97,9 +97,9 @@ PRIVATE=xxx
 % curl -s -D- https://bfaas.fly.dev/run -d uptime
 ```
 
-To update the basher image
+To update the basher image, use the `./updateWorker.sh` script, or manually:
 ```
-% fly deploy -c fly.toml.basher --update-only
+% fly -a bfaas-worker deploy -c fly.toml.basher --update-only
    ... capture IMAGE=registry.fly.io/bfaas-worker:deployment-01JE4XPGN5KVRBE2Z1H0FWGDPA
 % fly secrets set WORKER_IMAGE=$IMAGE
 ```
