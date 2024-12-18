@@ -144,9 +144,7 @@ func (mach *Mach) stop(ctx context.Context) error {
 
 	log.Printf("pool: stop %s %s %s", mach.pool.appName, mach.Name, mach.Id)
 	nonceOpt := machines.LeaseNonce(mach.leaseNonce)
-	_, err := mach.pool.api.Stop(ctx, mach.pool.appName, mach.Id, nonceOpt, japi.ReqBody(map[string]string{
-		"timeout": "1",
-	}))
+	_, err := mach.pool.api.Stop(ctx, mach.pool.appName, mach.Id, nonceOpt)
 	if err != nil {
 		return fmt.Errorf("api.Stop %s %s: %w", mach.Name, mach.Id, err)
 	}
