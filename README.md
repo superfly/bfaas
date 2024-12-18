@@ -81,7 +81,7 @@ PRIVATE=xxx
 % fly app create bfaas-worker -o bfaas
 % fly -a bfaas-worker ips allocate-v6 --private --org bfaas
 % fly -a bfaas-worker secrets set PUBLIC=$PUBLIC
-% fly deploy -c fly.toml.basher --update-only -a  -a bfaas-worker
+% fly deploy -c fly.toml.basher --update-only -a bfaas-worker
    ... capture IMAGE=registry.fly.io/bfaas-worker:deployment-01JF07KZF9JEC61S0AA895PW0F
 
 # Make bfaas app as our coordinator

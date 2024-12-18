@@ -45,6 +45,7 @@ func (s *Server) withOnce(next Handler) Handler {
 func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	raw := r.URL.Query().Get("raw") != ""
 	w.Header().Set("Worker", os.Getenv("FLY_MACHINE_ID"))
+	w.Header().Set("Content-Type", "text/event-stream")
 
 	bs, err := io.ReadAll(r.Body)
 	if err != nil {
