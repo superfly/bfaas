@@ -20,7 +20,6 @@ type Server struct {
 	signer     auth.Signer
 	maxReqTime time.Duration
 	pool       pool.Pool
-	rlim       *Limiter
 
 	stats map[string]*stats.Collector
 }
@@ -35,7 +34,6 @@ func New(pool pool.Pool, port int, privKey string, maxReqTime time.Duration) (*S
 		pool:       pool,
 		signer:     signer,
 		maxReqTime: maxReqTime,
-		rlim:       newLimiter(6, 2, time.Minute), // 1 req/10s per ip src, initial burst of 2.
 		stats: map[string]*stats.Collector{
 			statsRequest: stats.New(),
 			statsProxy:   stats.New(),

@@ -55,7 +55,7 @@ func main() {
 		api := machines.NewInternal(flyAuth)
 		var err error
 		p, err = pool.New(api, machId, workerApp, workerImage,
-			pool.Size(1), // keep it really small for testing
+			pool.Size(2), // keep it really small for testing
 			pool.Port(8001), pool.Region(region),
 			pool.WorkerTime(2*maxReqTime), pool.LeaseTime(5*time.Minute))
 		if err != nil {
