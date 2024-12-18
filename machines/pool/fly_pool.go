@@ -374,12 +374,14 @@ func (p *FlyPool) allocLeased(ctx context.Context, waitForFree bool) (*Mach, err
 			}
 
 			mach, err = p.growPool(ctx)
-			if err != nil || mach == nil {
+			if err != nil {
 				return nil, err
+			}
+			if mach != nil {
+				return mach, nil
 			}
 
 			if waitForFree {
-				log.Printf("pool: alloc: wait for free xxx")
 				return p.waitForFree(ctx)
 			}
 
