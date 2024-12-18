@@ -81,7 +81,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "read body failed", http.StatusInternalServerError)
 		return
 	}
-	log.Printf("handleRun %v %v", r.Header, string(body))
+	log.Printf("handleRun %v %q", r.Header, string(body))
 
 	replayMeta := r.Header.Get("fly-replay-src")
 	retriesRemaining := 1
