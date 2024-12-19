@@ -64,10 +64,10 @@ func doWithRetry(body []byte, req *http.Request) (resp *http.Response, err error
 	return
 }
 
-func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
+func (s *Server) proxyToWorker(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		for k, v := range s.stats {
-			log.Printf("coord: handleRun: stats %s: %+v", k, v.Stats())
+			log.Printf("coord: proxyToWorker: stats %s: %+v", k, v.Stats())
 		}
 	}()
 
@@ -83,7 +83,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "read body failed", http.StatusInternalServerError)
 		return
 	}
-	log.Printf("coord: handleRun %v %q", r.Header, string(body))
+	log.Printf("coord: proxyToWorker %v %q", r.Header, string(body))
 
 	replayMeta := r.Header.Get("fly-replay-src")
 	retriesRemaining := 1
@@ -127,9 +127,11 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 
 	defer worker.Free()
 
+	// Proxy request r to worker.Url with extra headers added.
 	ctx, _ := context.WithTimeout(r.Context(), s.maxReqTime)
-	url := fmt.Sprintf("%s/run", worker.Url)
-	workReq, err := http.NewRequestWithContext(ctx, "POST", url, nil) // body filled in by doWithRetry
+	method := r.Method
+	url := fmt.Sprintf("%s%s", worker.Url, r.URL.Path)
+	workReq, err := http.NewRequestWithContext(ctx, method, url, nil) // body filled in by doWithRetry
 	if err != nil {
 		log.Printf("coord: NewRequestWithContext: %v", err)
 		http.Error(w, "create worker request failed", http.StatusInternalServerError)
@@ -137,11 +139,14 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	auth := s.signer(time.Now(), worker.Id)
+	for k, v := range r.Header {
+		workReq.Header[k] = v
+	}
 	workReq.Header.Set("Authorization", auth)
 	workReq.Header.Set("fly-force-instance-id", worker.Id)
 	workReq.URL.RawQuery = r.URL.RawQuery
 
-	log.Printf("coord: making request for %v to %v worker %v", s.maxReqTime, url, worker.Id)
+	log.Printf("coord: making request for %v to worker %v: %v %v", s.maxReqTime, worker.Id, method, workReq.URL.String())
 	dtProxy := s.stats[statsProxy].Start()
 	workResp, err := doWithRetry(body, workReq)
 	dtProxy.End()
@@ -158,6 +163,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	}
 	defer workResp.Body.Close()
 
+	// proxy response workResp back to w.
 	if id := workResp.Header.Get("worker"); id != worker.Id {
 		log.Printf("coord: warning: request went to %v not %v", id, worker.Id)
 	}
