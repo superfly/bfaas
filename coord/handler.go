@@ -73,7 +73,10 @@ func doWithRetry(body []byte, req *http.Request) (resp *http.Response, err error
 // If it returns nil, the caller should return immediately, as the request has been
 // handled with an error or sent to another region for handling.
 func (s *Server) getWorker(w http.ResponseWriter, r *http.Request) *pool.Mach {
-	retriesRemaining := 1
+	var retriesRemaining int
+	if s.flyReplay {
+		retriesRemaining = 1
+	}
 
 	// meta has the retries
 	replayMeta := r.Header.Get("fly-replay-src")

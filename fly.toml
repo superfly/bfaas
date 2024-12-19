@@ -8,6 +8,7 @@ primary_region = 'dfw'
 
 [env]
   MAXREQTIME = "10s"
+  FLY_REPLAY = "yes"
   WORKER_APP = "bfaas-worker"
   WORKER_IMAGE = "registry.fly.io/bfaas-worker:deployment-01JF07KZF9JEC61S0AA895PW0F"
 

@@ -17,15 +17,17 @@ const (
 type Server struct {
 	*http.Server
 	maxReqTime time.Duration
+	flyReplay  bool
 	pool       pool.Pool
 
 	stats map[string]*stats.Collector
 }
 
-func New(pool pool.Pool, port int, maxReqTime time.Duration) (*Server, error) {
+func New(pool pool.Pool, port int, maxReqTime time.Duration, enableFlyReplay bool) (*Server, error) {
 	server := &Server{
 		pool:       pool,
 		maxReqTime: maxReqTime,
+		flyReplay:  enableFlyReplay,
 		stats: map[string]*stats.Collector{
 			statsRequest: stats.New(),
 			statsProxy:   stats.New(),

@@ -20,6 +20,7 @@ func main() {
 	reqTimeStr := os.Getenv("MAXREQTIME")
 	region := os.Getenv("FLY_REGION")
 	machId := os.Getenv("FLY_MACHINE_ID")
+	flyReplay := os.Getenv("FLY_REPLAY") != ""
 
 	log.Printf("checking args")
 	switch workerApp {
@@ -64,7 +65,7 @@ func main() {
 	defer p.Close()
 
 	log.Printf("building coord")
-	srv, err := coord.New(p, 8000, maxReqTime)
+	srv, err := coord.New(p, 8000, maxReqTime, flyReplay)
 	if err != nil {
 		log.Fatalf("coord.New: %v", err)
 	}

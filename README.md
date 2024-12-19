@@ -61,6 +61,7 @@ Coord expects these values from the environment:
 * `FLY_TOKEN`: the token to use with the machines API when creating machines (!mock).
 * `FLY_REGION`: the region to spawn worker machines in (!mock).
 * `FLY_MACHINE_ID`: machine ID to use as the pool name.
+* `FLY_REPLAY`: [optional] if set, enables replays in other regions when a pool machine isn't immediately available locally.
 
 Basher expects these values from the environment:
 
