@@ -11,23 +11,9 @@ import (
 	"os"
 	"os/exec"
 	"sync"
-	"time"
 )
 
 type Handler func(w http.ResponseWriter, r *http.Request)
-
-func (s *Server) withAuth(next Handler) Handler {
-	return func(w http.ResponseWriter, r *http.Request) {
-		auth := r.Header.Get("Authorization")
-		if err := s.verifier(time.Now(), auth); err != nil {
-			log.Printf("basher: received unauthorized request")
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		next(w, r)
-	}
-}
 
 func (s *Server) withOnce(next Handler) Handler {
 	return func(w http.ResponseWriter, r *http.Request) {

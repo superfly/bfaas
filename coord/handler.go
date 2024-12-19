@@ -138,11 +138,9 @@ func (s *Server) proxyToWorker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auth := s.signer(time.Now(), worker.Id)
 	for k, v := range r.Header {
 		workReq.Header[k] = v
 	}
-	workReq.Header.Set("Authorization", auth)
 	workReq.Header.Set("fly-force-instance-id", worker.Id)
 	workReq.URL.RawQuery = r.URL.RawQuery
 

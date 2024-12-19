@@ -4,16 +4,14 @@ A coordinator that runs unsafe code in a work machine with strict time limits.
 
 # Design
 
-The `basher` program is installed in its own org as the `bfaas-worker` app. It accepts requests,
-authenticates them, and runs untrusted bash commands. Aside from auth, it is a normal run of the
-mill web server.
+The `basher` program is installed in its own org as the `bfaas-worker` app. It accepts
+unauthenticated requests and runs untrusted bash commands.
 
 The `coord` program is installed in another org (here in my `personal` org). It is a web server
 that accepts unauthenticated requests, allocates a `bfaas-worker` worker from a machine pool, and
-proxies requests to it, and frees the machine (stoppinig it down and returning it to the pool).
+proxies requests to it, and frees the machine (stopping it down and returning it to the pool).
 It enforces a lifetime on all proxied requests, and cancels the request and shuts it down if
-the request outlives its life. When proxying requests, it adds an authentication header that
-is good for a limited time on a single worker machine.
+the request outlives its life.
 
 The bulk of the design and implementation is in the `machines/pool` library, which manages
 a pool of worker machines. It creates machines on-demand, up to the pool size. Machines are
@@ -30,6 +28,13 @@ The pool can be destroyed instead of stopped, which causes it to destroy any wor
 If a pool machine is stopped without performing its cleanup tasks, another worker will clean up any of its
 orphaned machines after their leases have expired.
 
+## Unauthenticated
+
+Workers accept unauthenticated requests. They are not reachable by the internet or by any other
+applications other than the coordinator. But any machine running in the coordinator application's
+space can make requests to workers. For this reason, access to the coordinator application should
+be restricted to trusted code.
+
 ## Untrusted metadata
 
 There is a subtle, but relatively weak, security flaw in this design. Untrusted worker machines
@@ -43,18 +48,14 @@ stopping the untrusted worker, which should not normally happen. A similar scena
 happen without tampering with the metadata if the pool was destroyed without cleaning up, and
 was never restarted.
 
-
 # What's here
 
 - `cmd/coord`: the server that starts basher works and proxies requests to them with a time limit.
 - `cmd/basher`: the server that runs untrusted code.
-- `cmd/genauth`: command line for generating an auth value for basher.
-- `cmd/genkey`: command line that generates pub/priv key pairs for basher authn.
 
 Coord expects these values from the environment:
 
 * `MAXREQTIME`: golang format duration string for how long to let requests live. ie. `"10s"`.
-* `PRIVATE`: private key to use to generate authn when making requests to workers.
 * `WORKER_APP`: the app name to use when creating worker machines. If this is `mock` then a mock pool will be used.
 * `WORKER_IMAGE`: the image to use when creating worker machines (!mock).
 * `FLY_TOKEN`: the token to use with the machines API when creating machines (!mock).
@@ -63,30 +64,21 @@ Coord expects these values from the environment:
 
 Basher expects these values from the environment:
 
-* `PUBLIC`: public key to use for authn check.
 * `FLY_MACHINE_ID`: machine ID to use for authn check.
 
 # Setup
 
 ```
-# Generate authn info.
-% go run cmd/genkey/main.go
-PUBLIC=xxx
-PRIVATE=xxx
-  ... capture PUBLIC=xxx PRIVATE=xxx ...
-
 # Make bfaas-worker app in its own org as our worker app,
 # with flycast reachable from the coordinator app.
 % fly orgs create bfaas
 % fly app create bfaas-worker -o bfaas
 % fly -a bfaas-worker ips allocate-v6 --private --org bfaas
-% fly -a bfaas-worker secrets set PUBLIC=$PUBLIC
 % fly deploy -c fly.toml.worker --update-only -a bfaas-worker
    ... capture IMAGE=registry.fly.io/bfaas-worker:deployment-01JF07KZF9JEC61S0AA895PW0F
 
 # Make bfaas app as our coordinator
 % fly app create bfaas -o bfaas
-% fly secrets set PRIVATE=$PRIVATE
 % fly secrets set WORKER_APP=bfaas-worker
 % fly secrets set WORKER_IMAGE=$IMAGE
 % fly secrets set MAXREQTIME=10s
@@ -108,7 +100,6 @@ To update the basher image, use the `./updateWorker.sh` script, or manually:
 
 Coord/basher can be tested locally with a mock pool:
 
-* Generate a key, set `PRIVATE` and `PUBLIC` in the environment
 * Set `WORKER_APP` to `mock`.
 * Set `MAXREQTIME` to something like `10s`.
 * Set `FLY_MACHINE_ID` to something like `m8001`.

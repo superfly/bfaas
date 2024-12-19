@@ -9,13 +9,12 @@ import (
 )
 
 func main() {
-	pubKey := os.Getenv("PUBLIC")
 	machId := os.Getenv("FLY_MACHINE_ID")
-	if machId == "" || pubKey == "" {
-		log.Fatalf("need PUBLIC and FLY_MACHINE_ID")
+	if machId == "" {
+		log.Fatalf("need FLY_MACHINE_ID")
 	}
 
-	srv, err := basher.New(8001, machId, pubKey)
+	srv, err := basher.New(8001, machId)
 	if err != nil {
 		log.Fatalf("basher.New: %v", err)
 	}

@@ -4,33 +4,23 @@ import (
 	"fmt"
 	"net/http"
 	"sync/atomic"
-	"time"
-
-	"github.com/superfly/coordBfaas/auth"
 )
 
 type Server struct {
 	*http.Server
-	verifier auth.Verifier
-	used     atomic.Bool
+	used atomic.Bool
 }
 
-func New(port int, machId string, pubKey string) (*Server, error) {
-	verifier, err := auth.NewVerifier(pubKey, machId, 60*time.Second)
-	if err != nil {
-		return nil, fmt.Errorf("building verifier: %w", err)
-	}
-
-	server := &Server{
-		verifier: verifier,
-	}
-
+func New(port int, machId string) (*Server, error) {
+	server := &Server{}
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /run", server.withAuth(server.withOnce(server.handleRun)))
+	mux.HandleFunc("POST /run", server.withOnce(server.handleRun))
 
 	server.Server = &http.Server{
 		// No timeouts set.
-		Addr:    fmt.Sprintf(":%d", port),
+		// Only listen on IPv4. Workers cannot reach each other on IPv4,
+		// but flycast requests from coordinator can reach IPv4.
+		Addr:    fmt.Sprintf("0.0.0.0:%d", port),
 		Handler: mux,
 	}
 	return server, nil

@@ -17,7 +17,6 @@ func main() {
 	workerApp := os.Getenv("WORKER_APP")
 	workerImage := os.Getenv("WORKER_IMAGE")
 	flyAuth := os.Getenv("FLY_TOKEN")
-	privKey := os.Getenv("PRIVATE")
 	reqTimeStr := os.Getenv("MAXREQTIME")
 	region := os.Getenv("FLY_REGION")
 	machId := os.Getenv("FLY_MACHINE_ID")
@@ -25,12 +24,12 @@ func main() {
 	log.Printf("checking args")
 	switch workerApp {
 	case "mock":
-		if privKey == "" || reqTimeStr == "" {
-			log.Fatalf("need: PRIVATE, MAXREQTIME")
+		if reqTimeStr == "" {
+			log.Fatalf("need: MAXREQTIME")
 		}
 	default:
-		if workerApp == "" || workerImage == "" || flyAuth == "" || privKey == "" || reqTimeStr == "" || machId == "" {
-			log.Fatalf("need: WORKER_APP, WORKER_IMAGE, FLY_TOKEN, PRIVATE, MAXREQTIME, FLY_MACHINE_ID")
+		if workerApp == "" || workerImage == "" || flyAuth == "" || reqTimeStr == "" || machId == "" {
+			log.Fatalf("need: WORKER_APP, WORKER_IMAGE, FLY_TOKEN, MAXREQTIME, FLY_MACHINE_ID")
 		}
 	}
 
@@ -65,7 +64,7 @@ func main() {
 	defer p.Close()
 
 	log.Printf("building coord")
-	srv, err := coord.New(p, 8000, privKey, maxReqTime)
+	srv, err := coord.New(p, 8000, maxReqTime)
 	if err != nil {
 		log.Fatalf("coord.New: %v", err)
 	}

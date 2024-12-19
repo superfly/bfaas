@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/superfly/coordBfaas/auth"
 	"github.com/superfly/coordBfaas/machines/pool"
 	"github.com/superfly/coordBfaas/stats"
 )
@@ -17,22 +16,15 @@ const (
 
 type Server struct {
 	*http.Server
-	signer     auth.Signer
 	maxReqTime time.Duration
 	pool       pool.Pool
 
 	stats map[string]*stats.Collector
 }
 
-func New(pool pool.Pool, port int, privKey string, maxReqTime time.Duration) (*Server, error) {
-	signer, err := auth.NewSigner(privKey)
-	if err != nil {
-		return nil, fmt.Errorf("building signer: %w", err)
-	}
-
+func New(pool pool.Pool, port int, maxReqTime time.Duration) (*Server, error) {
 	server := &Server{
 		pool:       pool,
-		signer:     signer,
 		maxReqTime: maxReqTime,
 		stats: map[string]*stats.Collector{
 			statsRequest: stats.New(),
