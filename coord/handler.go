@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
+	"github.com/superfly/coordBfaas/machines/pool"
 )
 
 var client = &http.Client{}
@@ -64,7 +66,63 @@ func doWithRetry(body []byte, req *http.Request) (resp *http.Response, err error
 	return
 }
 
+// getWorker returns a worker from the pool. It will try to get one immediately if possible,
+// and if it can't get one immediately in the current region, it will fly-replay to another
+// region once in hopes of getting a free worker quicker in another region.
+//
+// If it returns nil, the caller should return immediately, as the request has been
+// handled with an error or sent to another region for handling.
+func (s *Server) getWorker(w http.ResponseWriter, r *http.Request) *pool.Mach {
+	retriesRemaining := 1
+
+	// meta has the retries
+	replayMeta := r.Header.Get("fly-replay-src")
+	if replayMeta != "" {
+		log.Printf("coord: replay meta: %v", replayMeta)
+		matches := regexp.MustCompile(`state=retries-(-?\d+)$`).FindStringSubmatch(replayMeta)
+		if matches != nil {
+			retries, err := strconv.Atoi(matches[0])
+			if err != nil {
+				retriesRemaining = retries
+			}
+		}
+	}
+
+	waitForMachine := retriesRemaining <= 0
+	worker, err := s.pool.Alloc(context.Background(), waitForMachine)
+	if err != nil {
+		log.Printf("coord: pool.Alloc: %v", err)
+		http.Error(w, "create worker failed", http.StatusInternalServerError)
+		return nil
+	}
+
+	if worker == nil && retriesRemaining <= 0 {
+		log.Printf("coord: no worker available, out of retries")
+		http.Error(w, "no worker available", http.StatusServiceUnavailable)
+		return nil
+	}
+
+	if worker == nil {
+		retriesRemaining = retriesRemaining - 1
+		// gotta replay
+		log.Printf("coord: no worker available, fly-replay")
+		w.Header().Set("fly-replay", fmt.Sprintf("elsewhere=true;state=retries-%d", retriesRemaining))
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte("no worker available\n"))
+		return nil
+	}
+	return worker
+}
+
 func (s *Server) proxyToWorker(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Coord", os.Getenv("FLY_MACHINE_ID"))
+	worker := s.getWorker(w, r)
+	if worker == nil {
+		return
+	}
+
+	defer worker.Free()
+
 	defer func() {
 		for k, v := range s.stats {
 			log.Printf("coord: proxyToWorker: stats %s: %+v", k, v.Stats())
@@ -74,8 +132,6 @@ func (s *Server) proxyToWorker(w http.ResponseWriter, r *http.Request) {
 	dtReq := s.stats[statsRequest].Start()
 	defer dtReq.End()
 
-	w.Header().Set("Coord", os.Getenv("FLY_MACHINE_ID"))
-
 	// We need the body multiple times, read it into memory.
 	body, err := io.ReadAll(r.Body)
 	r.Body.Close()
@@ -84,48 +140,6 @@ func (s *Server) proxyToWorker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("coord: proxyToWorker %v %q", r.Header, string(body))
-
-	replayMeta := r.Header.Get("fly-replay-src")
-	retriesRemaining := 1
-
-	// meta has the retries
-	if replayMeta != "" {
-		log.Printf("coord: replay meta: %v", replayMeta)
-		matches := regexp.MustCompile(`state=retries-(-?\d+)$`).FindStringSubmatch(replayMeta)
-		if matches != nil {
-			r, err := strconv.Atoi(matches[0])
-			if err != nil {
-				retriesRemaining = r
-			}
-		}
-	}
-	waitForMachine := retriesRemaining <= 0
-	worker, err := s.pool.Alloc(context.Background(), waitForMachine)
-	if err != nil {
-		log.Printf("coord: pool.Alloc: %v", err)
-		http.Error(w, "create worker failed", http.StatusInternalServerError)
-		return
-	}
-
-	if worker == nil && retriesRemaining <= 0 {
-		log.Printf("coord: no worker available, out of retries")
-		http.Error(w, "no worker available", http.StatusServiceUnavailable)
-		return
-	}
-	if worker == nil {
-		retriesRemaining = retriesRemaining - 1
-		// gotta replay
-		log.Printf("coord: no worker available, fly-replay")
-		//w.Header().Set("fly-replay", "elsewhere=true")
-
-		//w.Header().Set("fly-replay", fmt.Sprintf("elsewhere=true;state=%d", retriesRemaining))
-		w.Header().Set("fly-replay", fmt.Sprintf("elsewhere=true;state=retries-%d", retriesRemaining))
-		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte("no worker available\n"))
-		return
-	}
-
-	defer worker.Free()
 
 	// Proxy request r to worker.Url with extra headers added.
 	ctx, _ := context.WithTimeout(r.Context(), s.maxReqTime)
