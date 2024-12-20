@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/superfly/coordBfaas/coord"
@@ -20,6 +21,7 @@ func main() {
 	reqTimeStr := os.Getenv("MAXREQTIME")
 	region := os.Getenv("FLY_REGION")
 	machId := os.Getenv("FLY_MACHINE_ID")
+	poolSizeStr := os.Getenv("POOLSIZE")
 	flyReplay := os.Getenv("FLY_REPLAY") != ""
 
 	log.Printf("checking args")
@@ -29,8 +31,8 @@ func main() {
 			log.Fatalf("need: MAXREQTIME")
 		}
 	default:
-		if workerApp == "" || workerImage == "" || flyAuth == "" || reqTimeStr == "" || machId == "" {
-			log.Fatalf("need: WORKER_APP, WORKER_IMAGE, FLY_TOKEN, MAXREQTIME, FLY_MACHINE_ID")
+		if workerApp == "" || workerImage == "" || flyAuth == "" || reqTimeStr == "" || machId == "" || poolSizeStr == "" {
+			log.Fatalf("need: WORKER_APP, WORKER_IMAGE, FLY_TOKEN, MAXREQTIME, FLY_MACHINE_ID, POOLSIZE")
 		}
 	}
 
@@ -41,6 +43,11 @@ func main() {
 	maxReqTime, err := time.ParseDuration(reqTimeStr)
 	if err != nil {
 		log.Fatalf("MAXREQTIME: %v", err)
+	}
+
+	poolSize, err := strconv.Atoi(poolSizeStr)
+	if err != nil {
+		log.Fatalf("POOLSIZE: %v", err)
 	}
 
 	log.Printf("starting pool")
@@ -55,8 +62,7 @@ func main() {
 		api := machines.NewInternal(flyAuth)
 		var err error
 		p, err = pool.New(api, machId, workerApp, workerImage,
-			pool.Size(2), // keep it really small for testing
-			pool.Port(8001), pool.Region(region),
+			pool.Port(8001), pool.Size(poolSize), pool.Region(region),
 			pool.WorkerTime(2*maxReqTime), pool.LeaseTime(5*time.Minute))
 		if err != nil {
 			log.Fatalf("pool.New: %v", err)
